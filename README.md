@@ -1,0 +1,69 @@
+# GLM Coding Plan 额度查询
+
+输入 GLM Coding Plan 的 API Key，即可查看额度用量的纯静态单页。无后端、无依赖、无构建、零第三方请求（字体使用系统等宽字体栈）。
+
+## 使用
+
+- 直接双击打开 `index.html` 即可（`file://` 下已验证可用），或起个静态服务：
+  ```bash
+  python3 -m http.server 8747
+  # 打开 http://127.0.0.1:8747/
+  ```
+- 粘贴 API Key（z.ai 或智谱开放平台的 API Keys 页面可找到），点击「查询用量」。
+- 可选：记住 Key（仅存 localStorage）、每 60 秒自动刷新、切换接口站点。
+
+## 展示内容
+
+| 区块 | 来源接口 | 说明 |
+|---|---|---|
+| 额度窗口进度条：5 小时窗口 + 本周 | `GET /api/monitor/usage/quota/limit` | `limits[]` 中两个 `type === 'TOKENS_LIMIT'` 条目，靠 `unit`/`number` 区分：`unit:3, number:5` = 5 小时窗口，`unit:6, number:1` = 本周。字段：`percentage`、`total`（token 上限）、`currentValue`（已用，缺省时按 `total × percentage/100` 推导）、`nextResetTime`（重置时间戳，显示为完整日期时间 + 倒计时，如「重置 2026-10-13（周二）22:00 · 36 小时 0 分钟后」）。响应 `data.level` 为套餐等级，显示在面板右上角 |
+| 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条 |
+| 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码） |
+| 模型用量明细 | 同上 | 从响应中探测模型数组（`modelUsage` / `models` 等），接口未返回时自动隐藏 |
+| 原始接口数据 | 全部 | 页面底部折叠面板，展示各接口未经处理的完整 JSON，便于核对页面未使用的字段（如重置卡、积分等是否存在） |
+
+> 注：若接口只返回一个 token 窗口（无周限制），则只显示 5 小时窗口一行；两者都没有时显示占位提示。
+
+## 接口与鉴权
+
+- 站点：`https://api.z.ai`（国际）/ `https://open.bigmodel.cn`（中国），路径相同，均已开启 CORS（浏览器可直连）。
+- 认证头依次尝试 `Authorization: Bearer <key>` 和 `Authorization: <key>`，401 时自动换另一种重试。
+- 注意：业务错误也返回 HTTP 200，需按响应体 `success` / `code` 判断，如 `{"code":401,"msg":"token expired or incorrect","success":false}`。
+
+## 部署（GitHub Pages）
+
+仓库自带 Action（`.github/workflows/deploy.yml`），推送到 `main` 即自动部署：
+
+1. 在 GitHub 新建仓库，名称建议就用 `glm-quota`；
+2. 推送：
+   ```bash
+   git remote add origin git@github.com:<你的用户名>/glm-quota.git
+   git push -u origin main
+   ```
+3. 仓库 Settings → Pages → Build and deployment → Source 选 **GitHub Actions**（首次部署前需要设置一次）；
+4. 访问 `https://<你的用户名>.github.io/glm-quota/`。
+
+之后每次 push 到 `main` 自动重新部署，也可在 Actions 页手动触发（workflow_dispatch）。
+
+## 测试
+
+`test.html` 是本地联调页：通过 iframe 加载主页面并 mock `fetch`，无需真实 Key 即可验证渲染与错误路径。
+
+```bash
+test.html?mode=ok      # mock 成功数据（双窗口 + MCP 限额 + 模型明细）
+test.html?mode=err401  # mock 401
+test.html?mode=high    # mock 92.8% / 88.1% 高用量（红色进度条）
+test.html?mode=fivonly # mock 只返回 5 小时窗口（周限制隐藏）
+test.html?mode=real401 # 不 mock，用假 Key 打真实接口验证 CORS/401
+```
+
+## 安全
+
+- Key 只出现在 `Authorization` 请求头中，且只发往你在下拉框选择的官方域名（`api.z.ai` / `open.bigmodel.cn`）；不进 URL、无统计脚本、页面无其他任何第三方请求。
+- Key 默认只在页面内存中；勾选「记住 Key」才写入 localStorage（本机浏览器，不参与云同步）。
+- **`file://` 打开时的注意点**：Chrome 把所有本地页面视为同一存储空间，勾选记住后 key 可被你本地打开的其他 HTML 读取。本地文件场景建议不勾选，或改用 `http://127.0.0.1` 访问（按源隔离）。
+- 接口返回的错误信息、限额类型、模型名等字符串均经 HTML 转义后插入，防止响应污染注入脚本。
+
+## 隐私
+
+页面不收集任何数据；Key 只保存在本机 localStorage（需勾选「记住 Key」），请求由浏览器直连官方接口。

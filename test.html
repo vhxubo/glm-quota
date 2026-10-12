@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>test harness</title>
+<style>body{margin:0}iframe{width:1200px;height:1600px;border:0}</style>
+</head>
+<body>
+<iframe id="f" src="index.html"></iframe>
+<script>
+  const mode = new URLSearchParams(location.search).get('mode') || 'ok';
+  const f = document.getElementById('f');
+  const H = 3600e3;
+  f.addEventListener('load', () => {
+    const win = f.contentWindow, doc = f.contentDocument;
+    if (mode === 'ok') {
+      const quota = { success: true, code: 200, data: { level: 'pro', limits: [
+        { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 34.2, total: 800000000, currentValue: 273600000, nextResetTime: Date.now() + 2.4 * H },
+        { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 61.5, total: 2400000000, nextResetTime: Date.now() + 36 * H },
+        { type: 'TIME_LIMIT', percentage: 12.5, currentValue: 25, usage: 200, usageDetails: [{ modelCode: 'web-search', usage: 20 }, { modelCode: 'zread', usage: 5 }] }
+      ]}};
+      const usage = { success: true, code: 200, data: {
+        totalUsage: { totalModelCallCount: 1234, totalTokensUsage: 456789012 },
+        modelUsage: [
+          { modelName: 'glm-4.6', totalModelCallCount: 900, totalTokensUsage: 300112233 },
+          { modelName: 'glm-4.5-air', totalModelCallCount: 334, totalTokensUsage: 156676779 }
+        ]
+      }};
+      const tool = { success: true, code: 200, data: { totalUsage: { totalNetworkSearchCount: 18, totalWebReadMcpCount: 5, totalZreadMcpCount: 2 } } };
+      win.fetch = async (url) => {
+        await new Promise(r => setTimeout(r, 200));
+        let body = usage;
+        if (url.includes('quota/limit')) body = quota;
+        else if (url.includes('tool-usage')) body = tool;
+        return { status: 200, ok: true, json: async () => body };
+      };
+    } else if (mode === 'err401') {
+      win.fetch = async () => ({ status: 200, ok: true, json: async () => ({ code: 401, msg: 'token expired or incorrect', success: false }) });
+    } else if (mode === 'high') {
+      const quota = { success: true, code: 200, data: { level: 'max', limits: [
+        { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 92.8, total: 800000000, nextResetTime: Date.now() + 0.6 * H },
+        { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 88.1, total: 2400000000, nextResetTime: Date.now() + 50 * H }
+      ]}};
+      win.fetch = async (url) => {
+        await new Promise(r => setTimeout(r, 200));
+        if (url.includes('quota/limit')) return { status: 200, ok: true, json: async () => quota };
+        return { status: 200, ok: true, json: async () => ({ success: true, code: 200, data: { totalUsage: { totalModelCallCount: 8800, totalTokensUsage: 3456789012 } } }) };
+      };
+    } else if (mode === 'fivonly') {
+      // 只有 5 小时窗口（无周限制）时的降级展示
+      const quota = { success: true, code: 200, data: { limits: [
+        { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 45, total: 800000000 }
+      ]}};
+      win.fetch = async (url) => ({ status: 200, ok: true, json: async () =>
+        url.includes('quota/limit') ? quota : { success: true, code: 200, data: { totalUsage: { totalModelCallCount: 10, totalTokensUsage: 500000 } } } });
+    }
+    doc.getElementById('apiKey').value = 'fake-key-abc123';
+    doc.getElementById('queryBtn').click();
+    doc.querySelector('details.rawbox').open = true;
+  });
+</script>
+</body>
+</html>
