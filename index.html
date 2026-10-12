@@ -55,6 +55,11 @@
   .topbar .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-right: 8px; vertical-align: 1px; }
   .topbar .dot.live { background: var(--ok); }
   .topbar .dot.err { background: var(--danger); }
+  .topbar .tb-r { display: inline-flex; align-items: center; gap: 8px; }
+  .topbar .tb-sep { color: var(--ink-3); }
+  .gh { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); text-decoration: none; transition: color .15s; }
+  .gh:hover { color: var(--ink); }
+  .gh svg { width: 13px; height: 13px; fill: currentColor; }
 
   h1 { font-size: 30px; font-weight: 700; letter-spacing: .01em; margin-top: 22px; }
   .sub { color: var(--ink-2); margin-top: 4px; font-size: 14px; }
@@ -239,6 +244,8 @@
 
   footer { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
   footer .mono { font-family: var(--mono); font-size: 11.5px; }
+  footer a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); transition: border-color .15s; }
+  footer a:hover { border-bottom-color: var(--ink); }
 
   .rawbox { margin-top: 18px; font-size: 13px; }
   .rawbox summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; user-select: none; }
@@ -270,7 +277,13 @@
 
   <div class="topbar">
     <span><span class="dot" id="statusDot"></span>GLM CODING PLAN · QUOTA</span>
-    <span>更新 <span id="lastUpdate">--:--:--</span></span>
+    <span class="tb-r">
+      <a class="gh" href="https://github.com/vhxubo/glm-quota" target="_blank" rel="noopener noreferrer" title="源码仓库">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GITHUB
+      </a>
+      <span class="tb-sep">·</span>
+      更新 <span id="lastUpdate">--:--:--</span>
+    </span>
   </div>
 
   <h1>额度查询</h1>
@@ -362,6 +375,7 @@
 
   <footer>
     本页为纯静态页面：Key 只用于浏览器直连官方接口，不经过任何第三方服务器。
+    源码 <a href="https://github.com/vhxubo/glm-quota" target="_blank" rel="noopener noreferrer">github.com/vhxubo/glm-quota</a>。
     <span class="mono">api.z.ai / open.bigmodel.cn · /api/monitor · /api/monitor/credit-usage</span>
   </footer>
 </div>
