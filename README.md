@@ -1,6 +1,6 @@
 # GLM Coding Plan 额度查询
 
-输入 GLM Coding Plan 的 API Key，即可查看额度用量的纯静态单页。无后端、无依赖、无构建、零第三方请求（字体使用系统等宽字体栈）。
+输入一个或多个 GLM Coding Plan 的 API Key，即可查看额度用量的纯静态单页。无后端、无依赖、无构建、零第三方请求（字体使用系统等宽字体栈）。
 
 ## 使用
 
@@ -9,13 +9,15 @@
   python3 -m http.server 8747
   # 打开 http://127.0.0.1:8747/
   ```
-- 粘贴 API Key（z.ai 或智谱开放平台的 API Keys 页面可找到），点击「查询用量」。
+- 粘贴 API Key（z.ai 或智谱开放平台的 API Keys 页面可找到），点击「查询用量」（`Ctrl+Enter` 亦可）。
+- 支持一次粘贴多个 Key（换行、空格或逗号分隔）：所有 Key 并发查询，在「多 Key 总览」面板对比展示，点击总览行可切换下方详情面板显示的 Key。
 - 可选：记住 Key（仅存 localStorage）、每 60 秒自动刷新、切换接口站点。
 
 ## 展示内容
 
 | 区块 | 来源接口 | 说明 |
 |---|---|---|
+| 多 Key 总览（≥2 个 Key 时出现） | 全部接口 | 每行一个 Key：状态点、套餐等级、5 小时 / 本周窗口百分比条（配色阈值同进度条）、今日与近 30 天调用次数。查询失败的 Key 在行内直接显示错误码与原因（其余 Key 不受影响），点击行可再次查看错误；点击成功的行切换下方各详情面板展示的 Key，当前行高亮 |
 | 额度窗口进度条：5 小时窗口 + 本周 | `GET /api/monitor/usage/quota/limit` | `limits[]` 中两个 `type === 'TOKENS_LIMIT'` 条目，靠 `unit`/`number` 区分：`unit:3, number:5` = 5 小时窗口，`unit:6, number:1` = 本周。字段：`percentage`、`total`（token 上限）、`currentValue`（已用，缺省时按 `total × percentage/100` 推导）、`nextResetTime`（重置时间戳，显示为完整日期时间 + 倒计时，如「重置 2026-10-13（周二）22:00 · 36 小时 0 分钟后」）。响应 `data.level` 为套餐等级，显示在面板右上角 |
 | 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条，副行显示 `nextResetTime` 的重置时间与倒计时 |
 | 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码）。每张卡片带迷你比例条（该时段 tokens 占近 30 天的比例，30 天卡恒为满格作标尺），副行附平均 tok/次 |
@@ -29,6 +31,7 @@
 ## 接口与鉴权
 
 - 站点：`https://api.z.ai`（国际）/ `https://open.bigmodel.cn`（中国），路径相同，均已开启 CORS（浏览器可直连）。
+- 多个 Key 使用同一次查询所选的站点；两个平台的 Key 不通用，混合使用时请分两批分别选对应站点查询。
 - 认证头依次尝试 `Authorization: Bearer <key>` 和 `Authorization: <key>`，401 时自动换另一种重试。
 - 注意：业务错误也返回 HTTP 200，需按响应体 `success` / `code` 判断，如 `{"code":401,"msg":"token expired or incorrect","success":false}`。
 
@@ -53,6 +56,8 @@
 
 ```bash
 test.html?mode=ok      # mock 成功数据（双窗口 + MCP 限额 + 模型明细）
+test.html?mode=multi   # mock 两个 Key（用量与套餐不同），验证多 Key 总览与行切换
+test.html?mode=partial # mock 一好一坏两个 Key，验证总览行内标红与 PARTIAL 提示
 test.html?mode=err401  # mock 401
 test.html?mode=high    # mock 92.8% / 88.1% 高用量（红色进度条）
 test.html?mode=fivonly # mock 只返回 5 小时窗口（周限制隐藏）
@@ -63,7 +68,7 @@ test.html?mode=real401 # 不 mock，用假 Key 打真实接口验证 CORS/401
 
 - **离线与防外传由 CSP 强制**：页面内置 `Content-Security-Policy`——`connect-src` 仅允许 `api.z.ai` 和 `open.bigmodel.cn` 两个官方域名，`default-src 'none'` 禁止加载任何外部脚本/样式/字体/图片/框架，`form-action 'none'` 禁止表单提交。即使代码被篡改，浏览器也会拦截向其他地址的任何请求。
 - Key 只出现在 `Authorization` 请求头中，且只发往你在下拉框选择的官方域名；不进 URL、无统计脚本、无其他任何第三方请求（唯一的外部 URL 引用就是这两个接口常量，可全文搜索验证）。
-- Key 默认只在页面内存中；勾选「记住 Key」才写入 localStorage（本机浏览器，不参与云同步）。
+- Key 默认只在页面内存中；勾选「记住 Key」才写入 localStorage（本机浏览器，不参与云同步），多个 Key 以 JSON 数组存于 `glmQuota.keys`（单个 Key 兼容旧的 `glmQuota.key`）。
 - **`file://` 打开时的注意点**：Chrome 把所有本地页面视为同一存储空间，勾选记住后 key 可被你本地打开的其他 HTML 读取。本地文件场景建议不勾选，或改用 `http://127.0.0.1` 访问（按源隔离）。
 - 接口返回的错误信息、限额类型、模型名等字符串均经 HTML 转义后插入，防止响应污染注入脚本。
 - **部署工作流零第三方**：`.github/workflows/deploy.yml` 只使用 GitHub 官方 `actions/*` 仓库的四个 action，且全部固定到 commit SHA（防 tag 篡改）；`upload-pages-artifact` 的产物只进入 GitHub Pages 自有存储，不存在向第三方上传的环节。

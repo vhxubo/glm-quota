@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><title>test harness</title>
-<style>body{margin:0}iframe{width:1200px;height:1900px;border:0}</style>
+<style>body{margin:0}iframe{width:1200px;height:2000px;border:0}</style>
 </head>
 <body>
 <iframe id="f" src="index.html"></iframe>
@@ -21,46 +21,55 @@
     const today = new Date(); today.setHours(0, 0, 0, 0);
     return Math.max(1, Math.round((today - d) / 864e5) + 1);
   };
+  // 按请求的 Authorization 头识别 Key（第二个 Key 用量更高），供 multi / partial 模式区分数据
+  const keyNo = opts => String((opts && opts.headers && opts.headers.Authorization) || '').includes('two') ? 2 : 1;
+  const okResp = body => ({ status: 200, ok: true, json: async () => body });
+  const resp401 = () => ({ status: 200, ok: true, json: async () => ({ code: 401, msg: 'token expired or incorrect', success: false }) });
   f.addEventListener('load', () => {
     const win = f.contentWindow, doc = f.contentDocument;
-    if (mode === 'ok') {
-      const quota = { success: true, code: 200, data: { level: 'pro', limits: [
-        { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 34.2, total: 800000000, currentValue: 273600000, nextResetTime: Date.now() + 2.4 * H },
-        { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 61.5, total: 2400000000, nextResetTime: Date.now() + 36 * H },
-        { type: 'TIME_LIMIT', percentage: 12.5, currentValue: 25, usage: 200, nextResetTime: Date.now() + 72 * H, usageDetails: [{ modelCode: 'web-search', usage: 20 }, { modelCode: 'zread', usage: 5 }] },
-        { type: 'PROMPTS_LIMIT', percentage: 40, currentValue: 40, usage: 100, nextResetTime: Date.now() + 72 * H }
-      ]}};
-      const tool = { success: true, code: 200, data: { totalUsage: { totalNetworkSearchCount: 18, totalWebReadMcpCount: 5, totalZreadMcpCount: 2 } } };
-      const mkUsage = times => ({ success: true, code: 200, data: {
-        totalUsage: { totalModelCallCount: 1279, totalTokensUsage: 469134690 },
-        x_time: times,
-        modelCallCount: times.map((_, i) => Math.round(20 + 30 * Math.abs(Math.sin(i / 3)))),
-        modelUsage: [
-          { modelName: 'glm-4.6', totalModelCallCount: 900, totalTokensUsage: 300112233 },
-          { modelName: 'glm-4.5-air', totalModelCallCount: 334, totalTokensUsage: 156676779 },
-          { modelName: 'glm-4.5v', totalModelCallCount: 45, totalTokensUsage: 12345678 }
-        ]
-      }});
-      const mkDetail = (times, mult) => ({ success: true, code: 200, data: {
-        x_time: times,
-        cachedTokens: times.map((_, i) => Math.round((300 + 400 * Math.abs(Math.sin(i / 4))) * mult)),
-        uncachedTokens: times.map((_, i) => Math.round((80 + 120 * Math.abs(Math.cos(i / 5))) * mult)),
-        outputTokens: times.map((_, i) => Math.round((40 + 60 * Math.abs(Math.sin(i / 2 + 1))) * mult)),
-        modelCallCount: times.map((_, i) => Math.round((10 + 25 * Math.abs(Math.sin(i / 3 + 0.5))) * mult / 8)),
-        summary: { cacheHitRate: '72.5%', totalCreditsUsage: 1200, avgDailyCredits: 40 }
-      }});
-      win.fetch = async (url) => {
-        await new Promise(r => setTimeout(r, 200));
-        const n = rangeDays(url);
-        let body;
-        if (url.includes('quota/limit')) body = quota;
-        else if (url.includes('tool-usage')) body = tool;
-        else if (url.includes('usage-detail')) body = mkDetail(n === 1 ? mkHours() : mkDays(n), n === 1 ? 1 : n === 7 ? 2 : 5);
-        else body = mkUsage(n === 1 ? mkHours() : mkDays(n));
-        return { status: 200, ok: true, json: async () => body };
-      };
+    const mkQuota = (pct, level) => ({ success: true, code: 200, data: { level, limits: [
+      { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: pct, total: 800000000, currentValue: Math.round(800000000 * pct / 100), nextResetTime: Date.now() + 2.4 * H },
+      { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: Math.min(pct * 1.8, 99.1), total: 2400000000, nextResetTime: Date.now() + 36 * H },
+      { type: 'TIME_LIMIT', percentage: 12.5, currentValue: 25, usage: 200, nextResetTime: Date.now() + 72 * H, usageDetails: [{ modelCode: 'web-search', usage: 20 }, { modelCode: 'zread', usage: 5 }] },
+      { type: 'PROMPTS_LIMIT', percentage: 40, currentValue: 40, usage: 100, nextResetTime: Date.now() + 72 * H }
+    ]}});
+    const mkUsage = (times, k) => { const m = k === 2 ? 5 : 1; return { success: true, code: 200, data: {
+      totalUsage: { totalModelCallCount: 1279 * m, totalTokensUsage: 469134690 * m },
+      x_time: times,
+      modelCallCount: times.map((_, i) => Math.round((20 + 30 * Math.abs(Math.sin(i / 3))) * m)),
+      modelUsage: [
+        { modelName: 'glm-4.6', totalModelCallCount: 900 * m, totalTokensUsage: 300112233 * m },
+        { modelName: 'glm-4.5-air', totalModelCallCount: 334 * m, totalTokensUsage: 156676779 * m }
+      ]
+    }}; };
+    const mkDetail = (times, mult) => ({ success: true, code: 200, data: {
+      x_time: times,
+      cachedTokens: times.map((_, i) => Math.round((300 + 400 * Math.abs(Math.sin(i / 4))) * mult)),
+      uncachedTokens: times.map((_, i) => Math.round((80 + 120 * Math.abs(Math.cos(i / 5))) * mult)),
+      outputTokens: times.map((_, i) => Math.round((40 + 60 * Math.abs(Math.sin(i / 2 + 1))) * mult)),
+      modelCallCount: times.map((_, i) => Math.round((10 + 25 * Math.abs(Math.sin(i / 3 + 0.5))) * mult / 8)),
+      summary: { cacheHitRate: '72.5%', totalCreditsUsage: 1200, avgDailyCredits: 40 }
+    }});
+    // ok / multi 共用：第二个 Key 返回更高的用量与不同套餐等级
+    const okMock = () => async (url, opts) => {
+      await new Promise(r => setTimeout(r, 150));
+      const k = keyNo(opts);
+      const n = rangeDays(url);
+      let body;
+      if (url.includes('quota/limit')) body = mkQuota(k === 2 ? 78.4 : 34.2, k === 2 ? 'max' : 'pro');
+      else if (url.includes('tool-usage')) body = { success: true, code: 200, data: { totalUsage: { totalNetworkSearchCount: k === 2 ? 40 : 18, totalWebReadMcpCount: k === 2 ? 12 : 5, totalZreadMcpCount: 2 } } };
+      else if (url.includes('usage-detail')) body = mkDetail(n === 1 ? mkHours() : mkDays(n), (n === 1 ? 1 : n === 7 ? 2 : 5) * (k === 2 ? 3 : 1));
+      else body = mkUsage(n === 1 ? mkHours() : mkDays(n), k);
+      return okResp(body);
+    };
+    if (mode === 'ok' || mode === 'multi') {
+      win.fetch = okMock();
+    } else if (mode === 'partial') {
+      // 第一个 Key 正常、第二个 Key 401，验证总览行内标红与 PARTIAL 提示
+      const inner = okMock();
+      win.fetch = async (url, opts) => keyNo(opts) === 2 ? resp401() : inner(url, opts);
     } else if (mode === 'err401') {
-      win.fetch = async () => ({ status: 200, ok: true, json: async () => ({ code: 401, msg: 'token expired or incorrect', success: false }) });
+      win.fetch = async () => resp401();
     } else if (mode === 'high') {
       const quota = { success: true, code: 200, data: { level: 'max', limits: [
         { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 92.8, total: 800000000, nextResetTime: Date.now() + 0.6 * H },
@@ -79,7 +88,10 @@
       win.fetch = async (url) => ({ status: 200, ok: true, json: async () =>
         url.includes('quota/limit') ? quota : { success: true, code: 200, data: { totalUsage: { totalModelCallCount: 10, totalTokensUsage: 500000 } } } });
     }
-    doc.getElementById('apiKey').value = 'fake-key-abc123';
+    doc.getElementById('apiKey').value = (mode === 'multi' || mode === 'partial')
+      ? 'fake-key-one-aaaaaaaaaa\nfake-key-two-bbbbbbbbbb'
+      : 'fake-key-abc123';
+    doc.getElementById('apiKey').dispatchEvent(new Event('input'));
     doc.getElementById('queryBtn').click();
     doc.querySelector('details.rawbox').open = true;
   });
