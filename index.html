@@ -23,6 +23,8 @@
     --danger: #D3382C;
     --danger-soft: #F9E4E2;
     --ok: #1F7A3D;
+    --teal: #1F6E68;
+    --plum: #6D4FC2;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Cascadia Mono", "Liberation Mono", monospace;
     --sans: -apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
     color-scheme: light;
@@ -150,6 +152,8 @@
   .stat .s-num { font-family: var(--mono); font-weight: 600; font-size: 24px; margin-top: 8px; font-variant-numeric: tabular-nums; line-height: 1.2; }
   .stat .s-num small { font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 4px; }
   .stat .s-sub { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .stat .mini { margin-top: 10px; height: 5px; border-radius: 3px; background: #E7EAEF; overflow: hidden; }
+  .stat .mini i { display: block; height: 100%; border-radius: 3px; background: var(--fuel); width: 0; transition: width .5s ease; }
 
   /* ---------- table ---------- */
   .models { padding: 6px 18px 16px; display: none; }
@@ -160,6 +164,31 @@
   td { font-family: var(--mono); text-align: right; padding: 8px 6px; border-bottom: 1px solid #E9ECF1; font-variant-numeric: tabular-nums; }
   td:first-child { font-family: var(--sans); color: var(--ink); font-weight: 500; }
   tr:last-child td { border-bottom: 0; }
+
+  /* ---------- model consumption chart ---------- */
+  .seg { display: flex; gap: 6px; padding: 12px 18px 0; flex-wrap: wrap; }
+  .seg[hidden] { display: none; }
+  .seg button {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em;
+    color: var(--ink-2); background: #fff; border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .seg button:hover { color: var(--ink); border-color: var(--ink-3); }
+  .seg button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .segwrap { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 18px 0; }
+  .segwrap .seg { padding: 0; }
+  .segwrap[hidden] { display: none; }
+
+  /* ---------- mcp donut + bars ---------- */
+  .mcp-flex { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 4px 18px 18px; }
+  .donut { flex: 0 0 auto; width: 128px; height: 128px; display: block; }
+  .donut .ring { stroke: #E7EAEF; }
+  .donut text { font-family: var(--mono); fill: var(--ink); }
+  .donut .d-num { font-size: 7.5px; font-weight: 600; }
+  .donut .d-cap { font-size: 3.4px; fill: var(--ink-3); letter-spacing: .12em; }
+  .mcp-rows { flex: 1 1 240px; min-width: 220px; }
+  .chip { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
 
   .idle-note { text-align: center; color: var(--ink-3); font-size: 13px; padding: 26px 18px 30px; display: block; }
   .idle-note.hide { display: none; }
@@ -184,6 +213,7 @@
     .stats { grid-template-columns: 1fr; }
     h1 { font-size: 24px; }
     .btn { flex: 1 1 100%; }
+    .mcp-flex { justify-content: center; }
   }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
@@ -239,18 +269,41 @@
       <div class="s-label"><span>今日调用</span><span class="s-tag">TODAY</span></div>
       <div class="s-num" id="todayCalls">--</div>
       <div class="s-sub" id="todayTokens">tokens --</div>
+      <div class="mini" aria-hidden="true"><i id="todayMini"></i></div>
     </div>
     <div class="stat">
       <div class="s-label"><span>近 7 天</span><span class="s-tag">7 DAYS</span></div>
       <div class="s-num" id="weekCalls">--</div>
       <div class="s-sub" id="weekTokens">tokens --</div>
+      <div class="mini" aria-hidden="true"><i id="weekMini"></i></div>
     </div>
     <div class="stat">
       <div class="s-label"><span>近 30 天</span><span class="s-tag">30 DAYS</span></div>
       <div class="s-num" id="monthCalls">--</div>
       <div class="s-sub" id="monthTokens">tokens --</div>
+      <div class="mini" aria-hidden="true"><i id="monthMini"></i></div>
     </div>
   </div>
+
+  <section class="panel" id="mcuPanel">
+    <div class="panel-head">
+      <span class="panel-title">模型消耗</span>
+      <span class="panel-meta" id="mcuMeta">TOKENS BY MODEL</span>
+    </div>
+    <div class="segwrap" id="mcuSegwrap" hidden>
+      <div class="seg" id="mcuSeg" role="group" aria-label="统计时段">
+        <button type="button" data-range="0">今日</button>
+        <button type="button" data-range="6">近 7 天</button>
+        <button type="button" data-range="29" class="on">近 30 天</button>
+      </div>
+      <div class="seg" id="metricSeg" role="group" aria-label="排序与占比指标">
+        <button type="button" data-metric="tokens" class="on">按 tokens</button>
+        <button type="button" data-metric="calls">按调用次数</button>
+      </div>
+    </div>
+    <p class="idle-note" id="mcuIdle">查询后显示各模型的 token 消耗占比与调用量。</p>
+    <div class="models" id="mcuBox"></div>
+  </section>
 
   <section class="panel">
     <div class="panel-head">
@@ -291,10 +344,16 @@
     todayCalls: $('todayCalls'), todayTokens: $('todayTokens'),
     weekCalls: $('weekCalls'), weekTokens: $('weekTokens'),
     monthCalls: $('monthCalls'), monthTokens: $('monthTokens'),
-    mcpBox: $('mcpBox'), mcpIdle: $('mcpIdle')
+    todayMini: $('todayMini'), weekMini: $('weekMini'), monthMini: $('monthMini'),
+    mcpBox: $('mcpBox'), mcpIdle: $('mcpIdle'),
+    mcuPanel: $('mcuPanel'), mcuSegwrap: $('mcuSegwrap'), mcuSeg: $('mcuSeg'), metricSeg: $('metricSeg'),
+    mcuBox: $('mcuBox'), mcuIdle: $('mcuIdle'), mcuMeta: $('mcuMeta')
   };
 
   var timer = null, lastKey = null, lastEndpoint = null;
+  // 各时段 model-usage 接口的原始 data（0=今日, 6=近7天, 29=近30天），供模型消耗图表切换
+  var MU = { 0: null, 6: null, 29: null };
+  var mcuRange = 29, mcuMetric = 'tokens';
 
   function fmtNum(n) {
     if (n === undefined || n === null || isNaN(n)) return '--';
@@ -416,9 +475,12 @@
       var used = l.currentValue !== undefined ? l.currentValue : l.usage;
       var limit = l.usage !== undefined && l.currentValue !== undefined ? l.usage : undefined;
       var valText = (limit !== undefined)
-        ? fmtTokens(used) + ' / ' + fmtTokens(limit)
+        ? fmtNum(used) + ' / ' + fmtNum(limit)
         : (used !== undefined ? fmtNum(used) : '已用');
-      rows.push(barRow(LIMIT_NAMES[l.type] || l.type, '', valText, pct, ''));
+      var reset = finite(l.nextResetTime);
+      if (reset === null) reset = finite(l.resetTime);
+      if (reset !== null && reset < 1e12) reset *= 1000; // 秒 → 毫秒
+      rows.push(barRow(LIMIT_NAMES[l.type] || l.type, '', valText, pct, fmtReset(reset)));
     });
 
     els.winsBox.innerHTML = rows.join('');
@@ -478,35 +540,171 @@
     return txt;
   }
 
+  var TOOL_NAMES = {
+    totalNetworkSearchCount: '联网搜索',
+    totalWebReadMcpCount: '网页读取',
+    totalZreadMcpCount: 'Zread 读取'
+  };
+  var CHART_COLORS = ['var(--fuel)', 'var(--warn)', 'var(--teal)', 'var(--plum)', 'var(--ink-3)'];
+
+  // SVG 环形图：r=15.9155 使周长≈100，dasharray 可直接用百分比；off=25 让起点在 12 点钟方向
+  function buildDonut(items, total) {
+    var R = 15.9155, segs = '', cum = 0;
+    items.forEach(function (it, i) {
+      var p = total > 0 ? it.count / total * 100 : 0;
+      segs += '<circle class="seg-c" cx="21" cy="21" r="' + R + '" fill="none" stroke="' + CHART_COLORS[i % CHART_COLORS.length] +
+        '" stroke-width="4.5" stroke-dasharray="' + p + ' ' + (100 - p) + '" stroke-dashoffset="' + (25 - cum) + '"></circle>';
+      cum += p;
+    });
+    return '<svg class="donut" viewBox="0 0 42 42" role="img" aria-label="MCP 工具调用占比">' +
+      '<circle class="ring" cx="21" cy="21" r="' + R + '" fill="none" stroke-width="4.5"></circle>' + segs +
+      '<text class="d-num" x="21" y="20.8" text-anchor="middle">' + fmtNum(total) + '</text>' +
+      '<text class="d-cap" x="21" y="26.4" text-anchor="middle">MCP CALLS · 30D</text>' +
+      '</svg>';
+  }
+
   function renderMcp(tu, limits) {
-    var rows = [];
+    // 汇总口径（totalUsage）驱动环形图；TIME_LIMIT.usageDetails（按工具明细）是另一统计口径，
+    // 只追加为灰色条形行，不并入环形图，避免同一批调用被重复计数
+    var agg = [];
     var t = (tu && tu.totalUsage) || {};
-    [['联网搜索', t.totalNetworkSearchCount],
-     ['网页读取', t.totalWebReadMcpCount],
-     ['Zread 读取', t.totalZreadMcpCount]].forEach(function (p) {
-      if (p[1] !== undefined && p[1] !== null) rows.push('<tr><td>' + p[0] + '</td><td>' + fmtNum(p[1]) + '</td></tr>');
+    Object.keys(TOOL_NAMES).forEach(function (k) {
+      if (t[k] !== undefined && t[k] !== null) agg.push({ name: TOOL_NAMES[k], count: Number(t[k]) || 0 });
+    });
+    Object.keys(t).forEach(function (k) {
+      if (TOOL_NAMES[k] || !/count$/i.test(k) || !isFinite(Number(t[k]))) return;
+      agg.push({ name: k, count: Number(t[k]) || 0 });
     });
     var tl = (limits || []).find(function (l) { return l && l.type === 'TIME_LIMIT'; });
-    var details = tl && Array.isArray(tl.usageDetails) ? tl.usageDetails : [];
-    details.forEach(function (d) {
-      if (!d) return;
-      var n = finite(d.usage);
-      rows.push('<tr><td>' + esc(d.modelCode || '-') + '<small>（按工具）</small></td><td>' + (n === null ? '--' : fmtNum(n)) + '</td></tr>');
-    });
-    if (!rows.length) {
+    var detailItems = ((tl && Array.isArray(tl.usageDetails)) ? tl.usageDetails : [])
+      .filter(function (d) { return !!d; })
+      .map(function (d) { return { name: (d.modelCode || '-') + '（按工具）', count: finite(d.usage) || 0 }; });
+    if (!agg.length && !detailItems.length) {
       els.mcpBox.classList.remove('show');
+      els.mcpBox.innerHTML = '';
       els.mcpIdle.classList.remove('hide');
       els.mcpIdle.textContent = '接口未返回 MCP 工具数据。';
       return;
     }
-    els.mcpBox.innerHTML = '<table><thead><tr><th>工具</th><th>调用次数</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+
+    var donutItems = agg.length ? agg : detailItems;
+    var total = 0;
+    donutItems.forEach(function (it) { total += it.count; });
+
+    // gray=true 的按工具明细行不参与环形图配色；条宽在各自组内按最大值归一
+    function rowHtml(it, i, group, gray) {
+      var c = gray ? 'var(--ink-3)' : CHART_COLORS[i % CHART_COLORS.length];
+      var gSum = 0, gMax = 0;
+      group.forEach(function (x) { gSum += x.count; if (x.count > gMax) gMax = x.count; });
+      var pct = gSum > 0 ? it.count / gSum * 100 : 0;
+      var w = gMax > 0 ? it.count / gMax * 100 : 0;
+      return '<div class="limit-row">' +
+        '<div class="lr-head"><span class="name"><i class="chip" style="background:' + c + '"></i>' + esc(it.name) + '</span>' +
+        '<span class="val">' + fmtNum(it.count) + ' 次 · ' + pct.toFixed(1) + '%</span></div>' +
+        '<div class="bar"><i data-pct="' + w + '" style="width:0%;background:' + c + '"></i></div>' +
+        '</div>';
+    }
+    var rows = donutItems.map(function (it, i) { return rowHtml(it, i, donutItems, false); })
+      .concat(agg.length ? detailItems.map(function (it, i) { return rowHtml(it, i, detailItems, true); }) : []);
+
+    els.mcpBox.innerHTML = '<div class="mcp-flex">' + buildDonut(donutItems, total) + '<div class="mcp-rows">' + rows.join('') + '</div></div>';
     els.mcpBox.classList.add('show');
     els.mcpIdle.classList.add('hide');
+    requestAnimationFrame(function () {
+      els.mcpBox.querySelectorAll('.mcp-rows .bar i').forEach(function (el) {
+        el.style.width = Math.min(Number(el.getAttribute('data-pct')) || 0, 100) + '%';
+      });
+    });
   }
 
-  function setStat(elsPair, total) {
-    elsPair[0].textContent = total && total.totalModelCallCount !== undefined ? fmtNum(total.totalModelCallCount) : '--';
-    elsPair[1].textContent = 'tokens ' + (total && total.totalTokensUsage !== undefined ? fmtTokens(total.totalTokensUsage) : '--');
+  function setStat(elsPair, total, base) {
+    var calls = total && total.totalModelCallCount !== undefined ? Number(total.totalModelCallCount) : null;
+    var tok = total && total.totalTokensUsage !== undefined ? Number(total.totalTokensUsage) : null;
+    elsPair[0].textContent = calls === null ? '--' : fmtNum(calls);
+    var sub = 'tokens ' + (tok === null ? '--' : fmtTokens(tok));
+    if (calls > 0 && tok !== null) sub += ' · 均 ' + fmtTokens(tok / calls) + '/次';
+    elsPair[1].textContent = sub;
+    // 迷你条：该时段 tokens 占近 30 天的比例（30 天卡本身恒为满格，作为标尺）
+    var mini = elsPair[2];
+    if (!mini) return;
+    var w = (base && base.totalTokensUsage > 0 && tok !== null) ? Math.min(tok / base.totalTokensUsage * 100, 100) : 0;
+    mini.style.width = '0%';
+    requestAnimationFrame(function () { mini.style.width = w + '%'; });
+  }
+
+  /* ---------- 模型消耗图表 ---------- */
+  // 真实接口目前不返回按模型数据（见 ef2c3f1）：按常见键名 + 通用数组扫描探测，
+  // 三个时段都探测不到时整个面板自动隐藏，避免常驻占位
+  var MODEL_KEYS = ['modelUsage', 'models', 'modelUsages', 'usageList', 'details', 'list'];
+  function extractModels(d) {
+    if (!d) return null;
+    for (var i = 0; i < MODEL_KEYS.length; i++) {
+      var a = d[MODEL_KEYS[i]];
+      if (Array.isArray(a) && a.length) return a;
+    }
+    for (var k in d) {
+      var b = d[k];
+      if (Array.isArray(b) && b.length && b[0] && typeof b[0] === 'object' &&
+          ('modelName' in b[0] || 'model' in b[0] || 'name' in b[0])) return b;
+    }
+    return null;
+  }
+
+  // 兼容不同接口形态的字段别名（ modelName/model/name 等 ）
+  function modelName(m) { return m.modelName || m.model || m.name || '-'; }
+  function modelCalls(m) {
+    var v = m.totalModelCallCount !== undefined ? m.totalModelCallCount
+      : (m.callCount !== undefined ? m.callCount : m.count);
+    return Number(v) || 0;
+  }
+  function modelTokens(m) {
+    var v = m.totalTokensUsage !== undefined ? m.totalTokensUsage
+      : (m.tokensUsage !== undefined ? m.tokensUsage : m.tokens);
+    return Number(v) || 0;
+  }
+
+  // 条形长度 = 当前指标（tokens 或调用次数）占模型明细总和的百分比；条色恒为 fuel 蓝，
+  // 不复用额度条的红黄语义。切换时段/指标时按对应值重新降序。
+  function renderModelChart() {
+    var d = MU[mcuRange];
+    var byCalls = mcuMetric === 'calls';
+    var val = byCalls ? modelCalls : modelTokens;
+    var found = extractModels(d);
+    var list = found ? found.slice() : [];
+    list.sort(function (a, b) { return val(b) - val(a); });
+    var sum = 0, sumTok = 0, sumCalls = 0;
+    list.forEach(function (m) {
+      sum += val(m);
+      sumTok += modelTokens(m);
+      sumCalls += modelCalls(m);
+    });
+    var grand = (d && d.totalUsage && d.totalUsage.totalTokensUsage !== undefined) ? d.totalUsage.totalTokensUsage : sumTok;
+    els.mcuMeta.textContent = (mcuRange === 0 ? 'TODAY' : mcuRange === 6 ? '7 DAYS' : '30 DAYS') + ' · ' + fmtTokens(grand) + ' TOKENS';
+
+    if (!list.length) {
+      els.mcuBox.innerHTML = '';
+      els.mcuBox.classList.remove('show');
+      els.mcuIdle.classList.remove('hide');
+      els.mcuIdle.textContent = d ? '该时段接口未返回模型明细。' : '该时段暂无数据，可切换其他时段。';
+      return;
+    }
+    var rows = list.map(function (m) {
+      var tok = modelTokens(m);
+      var calls = modelCalls(m);
+      var pct = sum > 0 ? val(m) / sum * 100 : 0;
+      var valText = byCalls ? fmtNum(calls) + ' 次' : fmtTokens(tok) + ' tok';
+      var subBits = [byCalls ? fmtTokens(tok) + ' tok' : fmtNum(calls) + ' 次'];
+      if (calls > 0) subBits.push('均 ' + fmtTokens(tok / calls) + ' tok/次');
+      return barRow(modelName(m), '', valText, pct, subBits.join(' · '));
+    });
+    els.mcuBox.innerHTML = rows.join('');
+    els.mcuBox.classList.add('show');
+    els.mcuIdle.classList.add('hide');
+    requestAnimationFrame(function () {
+      els.mcuBox.querySelectorAll('.bar i').forEach(function (el) {
+        el.style.width = Math.min(Number(el.getAttribute('data-pct')) || 0, 100) + '%';
+      });
+    });
   }
 
   /* ---------- main ---------- */
@@ -518,6 +716,8 @@
     }
     var base = els.endpoint.value;
     RAW = {};
+    MU = { 0: null, 6: null, 29: null };
+    els.mcuPanel.style.display = '';
     els.btn.disabled = true;
     els.btn.innerHTML = '<span class="spin"></span>查询中…';
     if (!silent) hideAlert();
@@ -541,9 +741,19 @@
       var today = null;
       try { today = await apiGet(base, key, '/api/monitor/usage/model-usage' + rangeParams(0)); } catch (e) {}
 
-      setStat([els.todayCalls, els.todayTokens], today && today.totalUsage);
-      setStat([els.weekCalls, els.weekTokens], mu7 && mu7.totalUsage);
-      setStat([els.monthCalls, els.monthTokens], mu30 && mu30.totalUsage);
+      var base30 = (mu30 && mu30.totalUsage) || null;
+      setStat([els.todayCalls, els.todayTokens, els.todayMini], today && today.totalUsage, base30);
+      setStat([els.weekCalls, els.weekTokens, els.weekMini], mu7 && mu7.totalUsage, base30);
+      setStat([els.monthCalls, els.monthTokens, els.monthMini], mu30 && mu30.totalUsage, base30);
+
+      MU[0] = today; MU[6] = mu7; MU[29] = mu30;
+      if (extractModels(MU[0]) || extractModels(MU[6]) || extractModels(MU[29])) {
+        els.mcuPanel.style.display = '';
+        els.mcuSegwrap.hidden = false;
+        renderModelChart();
+      } else {
+        els.mcuPanel.style.display = 'none';
+      }
 
       renderMcp(tu30, limits);
 
@@ -571,6 +781,24 @@
     var isPw = els.key.type === 'password';
     els.key.type = isPw ? 'text' : 'password';
     els.eye.textContent = isPw ? '隐藏' : '显示';
+  });
+  els.mcuSeg.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-range]');
+    if (!b) return;
+    var r = Number(b.getAttribute('data-range'));
+    if (r === mcuRange) return;
+    mcuRange = r;
+    els.mcuSeg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    renderModelChart();
+  });
+  els.metricSeg.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-metric]');
+    if (!b) return;
+    var m = b.getAttribute('data-metric');
+    if (m === mcuMetric) return;
+    mcuMetric = m;
+    els.metricSeg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    renderModelChart();
   });
   els.auto.addEventListener('change', function () {
     if (timer) { clearInterval(timer); timer = null; }

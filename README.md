@@ -17,9 +17,10 @@
 | 区块 | 来源接口 | 说明 |
 |---|---|---|
 | 额度窗口进度条：5 小时窗口 + 本周 | `GET /api/monitor/usage/quota/limit` | `limits[]` 中两个 `type === 'TOKENS_LIMIT'` 条目，靠 `unit`/`number` 区分：`unit:3, number:5` = 5 小时窗口，`unit:6, number:1` = 本周。字段：`percentage`、`total`（token 上限）、`currentValue`（已用，缺省时按 `total × percentage/100` 推导）、`nextResetTime`（重置时间戳，显示为完整日期时间 + 倒计时，如「重置 2026-10-13（周二）22:00 · 36 小时 0 分钟后」）。响应 `data.level` 为套餐等级，显示在面板右上角 |
-| 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条 |
-| 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码） |
-| MCP 工具用量 | `GET /api/monitor/usage/tool-usage?…`（30 天） | `totalUsage` 的 `totalNetworkSearchCount`（联网搜索）/ `totalWebReadMcpCount`（网页读取）/ `totalZreadMcpCount`（Zread 读取）；另从 `quota/limit` 中 `TIME_LIMIT` 条目的 `usageDetails[]`（`modelCode` + `usage`）追加按工具明细 |
+| 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条，副行显示 `nextResetTime` 的重置时间与倒计时 |
+| 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码）。每张卡片带迷你比例条（该时段 tokens 占近 30 天的比例，30 天卡恒为满格作标尺），副行附平均 tok/次 |
+| 模型消耗图表（时段 × 指标切换，按数据自动隐藏） | 同上 | 面板缓存三个时段的完整响应，按常见键名（`modelUsage`/`models`/`usageList` 等）加通用数组扫描探测按模型明细，兼容 `modelName`/`model`/`name`、`callCount`/`tokens` 等字段别名；渲染原生条形图，可切换「今日 / 近 7 天 / 近 30 天」与「按 tokens / 按调用次数」，按所选指标降序，条长 = 占明细总和的百分比，行首列为主指标数值、副行为另一指标与平均 tok/次。三个时段均未返回按模型数据时整个面板自动隐藏（真实接口目前不返回，见 ef2c3f1）；纯 CSS 条形，条色恒为 fuel 蓝 |
+| MCP 工具用量（环形图 + 条形图） | `GET /api/monitor/usage/tool-usage?…`（30 天） | 左侧为内联 SVG 环形图（中心显示 30 天 MCP 调用总数，扇区为各工具占比），右侧为带色块的条形行。数据取 `totalUsage` 的 `totalNetworkSearchCount`（联网搜索）/ `totalWebReadMcpCount`（网页读取）/ `totalZreadMcpCount`（Zread 读取），若接口新增其他 `*Count` 字段也会以原始键名展示；`quota/limit` 中 `TIME_LIMIT` 的 `usageDetails[]`（`modelCode` + `usage`）属另一统计口径，以灰色条形行追加（`xx（按工具）`），不并入环形图以免重复计数 |
 | 原始接口数据 | 全部 | 页面底部折叠面板，展示各接口未经处理的完整 JSON，便于核对页面未使用的字段（如重置卡、积分等是否存在） |
 
 > 注：若接口只返回一个 token 窗口（无周限制），则只显示 5 小时窗口一行；两者都没有时显示占位提示。
