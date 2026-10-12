@@ -176,9 +176,31 @@
   }
   .seg button:hover { color: var(--ink); border-color: var(--ink-3); }
   .seg button.on { background: var(--ink); border-color: var(--ink); color: #fff; }
-  .segwrap { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 18px 0; }
-  .segwrap .seg { padding: 0; }
-  .segwrap[hidden] { display: none; }
+  .seg[hidden] { display: none; }
+
+  /* ---------- 模型消耗折线图 ---------- */
+  .chartbox { position: relative; padding: 4px 12px 0; }
+  .chartbox svg { display: block; width: 100%; height: auto; }
+  .chartbox text { font-family: var(--mono); font-size: 10px; fill: var(--ink-3); }
+  .chartbox .gl { stroke: var(--ink-3); stroke-dasharray: 3 3; }
+  .chartbox .tip {
+    position: absolute; pointer-events: none; display: none; z-index: 2;
+    background: var(--ink); color: #fff; border-radius: 6px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.7;
+    padding: 6px 10px; white-space: nowrap;
+    box-shadow: 0 4px 14px -6px rgba(25,28,34,.5);
+  }
+  .chartbox .tip .t { color: #B7BDC9; }
+  .chartbox .tip .chip { width: 7px; height: 7px; margin-right: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 18px 16px; }
+  .legend[hidden] { display: none; }
+  .legend button {
+    display: flex; align-items: center; gap: 6px;
+    border: 0; background: transparent; cursor: pointer; padding: 2px 0;
+    font-family: var(--sans); font-size: 12px; color: var(--ink-2);
+  }
+  .legend button.off { color: var(--ink-3); text-decoration: line-through; }
+  .legend .sum { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 
   /* ---------- mcp donut + bars ---------- */
   .mcp-flex { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 4px 18px 18px; }
@@ -288,21 +310,16 @@
   <section class="panel" id="mcuPanel">
     <div class="panel-head">
       <span class="panel-title">模型消耗</span>
-      <span class="panel-meta" id="mcuMeta">TOKENS BY MODEL</span>
+      <span class="panel-meta" id="mcuMeta">USAGE OVER TIME</span>
     </div>
-    <div class="segwrap" id="mcuSegwrap" hidden>
-      <div class="seg" id="mcuSeg" role="group" aria-label="统计时段">
-        <button type="button" data-range="0">今日</button>
-        <button type="button" data-range="6">近 7 天</button>
-        <button type="button" data-range="29" class="on">近 30 天</button>
-      </div>
-      <div class="seg" id="metricSeg" role="group" aria-label="排序与占比指标">
-        <button type="button" data-metric="tokens" class="on">按 tokens</button>
-        <button type="button" data-metric="calls">按调用次数</button>
-      </div>
+    <div class="seg" id="mcuSeg" hidden>
+      <button type="button" data-range="0">今日</button>
+      <button type="button" data-range="6">近 7 天</button>
+      <button type="button" data-range="29" class="on">近 30 天</button>
     </div>
-    <p class="idle-note" id="mcuIdle">查询后显示各模型的 token 消耗占比与调用量。</p>
-    <div class="models" id="mcuBox"></div>
+    <p class="idle-note" id="mcuIdle">查询后显示按时间变化的消耗折线图。</p>
+    <div class="chartbox" id="mcuBox" hidden></div>
+    <div class="legend" id="mcuLegend" hidden></div>
   </section>
 
   <section class="panel">
@@ -321,7 +338,7 @@
 
   <footer>
     本页为纯静态页面：Key 只用于浏览器直连官方接口，不经过任何第三方服务器。
-    <span class="mono">api.z.ai / open.bigmodel.cn · /api/monitor/usage</span>
+    <span class="mono">api.z.ai / open.bigmodel.cn · /api/monitor · /api/monitor/credit-usage</span>
   </footer>
 </div>
 
@@ -346,14 +363,15 @@
     monthCalls: $('monthCalls'), monthTokens: $('monthTokens'),
     todayMini: $('todayMini'), weekMini: $('weekMini'), monthMini: $('monthMini'),
     mcpBox: $('mcpBox'), mcpIdle: $('mcpIdle'),
-    mcuPanel: $('mcuPanel'), mcuSegwrap: $('mcuSegwrap'), mcuSeg: $('mcuSeg'), metricSeg: $('metricSeg'),
-    mcuBox: $('mcuBox'), mcuIdle: $('mcuIdle'), mcuMeta: $('mcuMeta')
+    mcuPanel: $('mcuPanel'), mcuSeg: $('mcuSeg'),
+    mcuBox: $('mcuBox'), mcuLegend: $('mcuLegend'), mcuIdle: $('mcuIdle'), mcuMeta: $('mcuMeta')
   };
 
   var timer = null, lastKey = null, lastEndpoint = null;
-  // 各时段 model-usage 接口的原始 data（0=今日, 6=近7天, 29=近30天），供模型消耗图表切换
+  // 各时段原始响应（0=今日, 6=近7天, 29=近30天）：UD = usage-detail（优先，token 序列），MU = model-usage（回退，调用序列）
   var MU = { 0: null, 6: null, 29: null };
-  var mcuRange = 29, mcuMetric = 'tokens';
+  var UD = { 0: null, 6: null, 29: null };
+  var mcuRange = 29, mcuOff = {}, mcuTS = null;
 
   function fmtNum(n) {
     if (n === undefined || n === null || isNaN(n)) return '--';
@@ -428,10 +446,10 @@
     throw lastErr || new ApiError(401, '鉴权失败');
   }
 
-  function rangeParams(startDaysAgo) {
+  function rangeQS(startDaysAgo) {
     var end = new Date(); end.setHours(23, 59, 59, 999);
     var start = new Date(); start.setDate(start.getDate() - startDaysAgo); start.setHours(0, 0, 0, 0);
-    return '?startTime=' + encodeURIComponent(fmtParam(start)) + '&endTime=' + encodeURIComponent(fmtParam(end));
+    return 'startTime=' + encodeURIComponent(fmtParam(start)) + '&endTime=' + encodeURIComponent(fmtParam(end));
   }
 
   var LIMIT_NAMES = {
@@ -632,79 +650,196 @@
     requestAnimationFrame(function () { mini.style.width = w + '%'; });
   }
 
-  /* ---------- 模型消耗图表 ---------- */
-  // 真实接口目前不返回按模型数据（见 ef2c3f1）：按常见键名 + 通用数组扫描探测，
-  // 三个时段都探测不到时整个面板自动隐藏，避免常驻占位
-  var MODEL_KEYS = ['modelUsage', 'models', 'modelUsages', 'usageList', 'details', 'list'];
-  function extractModels(d) {
+  /* ---------- 模型消耗折线图 ---------- */
+  // 时间轴来自 data.x_time（usage-detail 当日按小时、7/30 天按天；model-usage 为小时桶）。
+  // 序列自动发现：优先嵌套 series[]，其次与 x_time 等长的数值平行数组，兼容接口字段演进。
+  var TIME_KEYS = ['x_time', 'xTime', 'timeList', 'times'];
+  var SERIES_NAMES = {
+    modelCallCount: '调用次数', callCount: '调用次数',
+    totalTokensUsage: 'Tokens 总量', tokenUsage: 'Tokens 总量',
+    totalCreditsUsage: '积分消耗', creditsUsage: '积分',
+    cachedTokens: '缓存输入', cacheTokens: '缓存输入', cacheInputTokens: '缓存输入',
+    uncachedTokens: '非缓存输入', uncacheTokens: '非缓存输入', inputTokens: '输入 tokens',
+    outputTokens: '输出 tokens', outputToken: '输出 tokens'
+  };
+
+  function isTimeKey(k) { return TIME_KEYS.indexOf(k) >= 0; }
+  function numArr(a) {
+    if (!Array.isArray(a) || a.length < 2) return null;
+    var out = [];
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] === null || a[i] === undefined) { out.push(0); continue; }
+      var n = Number(a[i]);
+      if (!isFinite(n)) return null;
+      out.push(n);
+    }
+    return out;
+  }
+
+  function extractTimeSeries(d) {
     if (!d) return null;
-    for (var i = 0; i < MODEL_KEYS.length; i++) {
-      var a = d[MODEL_KEYS[i]];
-      if (Array.isArray(a) && a.length) return a;
+    var times = null;
+    for (var i = 0; i < TIME_KEYS.length; i++) {
+      var t = d[TIME_KEYS[i]];
+      if (Array.isArray(t) && t.length >= 2) { times = t; break; }
     }
-    for (var k in d) {
-      var b = d[k];
-      if (Array.isArray(b) && b.length && b[0] && typeof b[0] === 'object' &&
-          ('modelName' in b[0] || 'model' in b[0] || 'name' in b[0])) return b;
+    if (!times) return null;
+    var series = [];
+    var nested = d.series || d.seriesList || d.modelSeries || d.modelUsage;
+    if (Array.isArray(nested)) {
+      nested.forEach(function (s) {
+        if (!s || typeof s !== 'object') return;
+        var v = numArr(s.values || s.data || s.list || s.tokenUsage || s.tokens || s.usage);
+        if (v && v.length === times.length) {
+          series.push({ name: String(s.modelName || s.name || s.key || s.modelCode || '系列'), values: v });
+        }
+      });
     }
-    return null;
+    if (!series.length) {
+      Object.keys(d).forEach(function (k) {
+        if (isTimeKey(k)) return;
+        var v = numArr(d[k]);
+        if (v && v.length === times.length) series.push({ name: SERIES_NAMES[k] || k, values: v });
+      });
+    }
+    if (!series.length) return null;
+    return { times: times.map(String), series: series };
   }
 
-  // 兼容不同接口形态的字段别名（ modelName/model/name 等 ）
-  function modelName(m) { return m.modelName || m.model || m.name || '-'; }
-  function modelCalls(m) {
-    var v = m.totalModelCallCount !== undefined ? m.totalModelCallCount
-      : (m.callCount !== undefined ? m.callCount : m.count);
-    return Number(v) || 0;
+  // y 轴取 1/2/5×10^n 的「好看」上界
+  function niceMax(v) {
+    if (!(v > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+    var f = v / p;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
   }
-  function modelTokens(m) {
-    var v = m.totalTokensUsage !== undefined ? m.totalTokensUsage
-      : (m.tokensUsage !== undefined ? m.tokensUsage : m.tokens);
-    return Number(v) || 0;
+  function fmtTick(s) {
+    if (/^\d{10,13}$/.test(s)) {
+      var d = new Date(Number(s.length === 10 ? s * 1000 : s));
+      return isNaN(d.getTime()) ? s : p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(5);
+    var m = s.match(/\d{2}:\d{2}/);
+    return m ? m[0] : s;
+  }
+  function isCountSeries(name) { return /次数|调用/.test(name); }
+  function fmtVal(name, v) { return isCountSeries(name) ? fmtNum(v) : fmtTokens(v); }
+
+  function visibleSeries() {
+    if (!mcuTS) return [];
+    return mcuTS.series.filter(function (s, i) { return !mcuOff[i]; });
   }
 
-  // 条形长度 = 当前指标（tokens 或调用次数）占模型明细总和的百分比；条色恒为 fuel 蓝，
-  // 不复用额度条的红黄语义。切换时段/指标时按对应值重新降序。
-  function renderModelChart() {
-    var d = MU[mcuRange];
-    var byCalls = mcuMetric === 'calls';
-    var val = byCalls ? modelCalls : modelTokens;
-    var found = extractModels(d);
-    var list = found ? found.slice() : [];
-    list.sort(function (a, b) { return val(b) - val(a); });
-    var sum = 0, sumTok = 0, sumCalls = 0;
-    list.forEach(function (m) {
-      sum += val(m);
-      sumTok += modelTokens(m);
-      sumCalls += modelCalls(m);
+  function renderLegend() {
+    var all = mcuTS.series;
+    if (all.length < 2) { els.mcuLegend.hidden = true; els.mcuLegend.innerHTML = ''; return; }
+    els.mcuLegend.hidden = false;
+    els.mcuLegend.innerHTML = all.map(function (s, i) {
+      var sum = 0;
+      s.values.forEach(function (v) { sum += v; });
+      return '<button type="button" data-i="' + i + '"' + (mcuOff[i] ? ' class="off"' : '') + '>' +
+        '<i class="chip" style="background:' + CHART_COLORS[i % CHART_COLORS.length] + '"></i>' + esc(s.name) +
+        (mcuOff[i] ? '' : '<span class="sum"> · ' + fmtVal(s.name, sum) + '</span>') + '</button>';
+    }).join('');
+  }
+
+  function drawChart() {
+    var W = 640, H = 264, padL = 48, padR = 14, padT = 12, padB = 26;
+    var n = mcuTS.times.length, vis = visibleSeries();
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var maxV = 0;
+    vis.forEach(function (s) { s.values.forEach(function (v) { if (v > maxV) maxV = v; }); });
+    var yMax = niceMax(maxV);
+    function X(i) { return padL + plotW * (n === 1 ? 0.5 : i / (n - 1)); }
+    function Y(v) { return padT + plotH * (1 - v / yMax); }
+    var allCount = vis.length > 0 && vis.every(function (s) { return isCountSeries(s.name); });
+    var fmtY = allCount ? fmtNum : fmtTokens;
+    var g = '';
+    var k, vy;
+    for (k = 0; k <= 4; k++) {
+      vy = padT + plotH * k / 4;
+      g += '<line x1="' + padL + '" y1="' + vy + '" x2="' + (W - padR) + '" y2="' + vy + '" stroke="#E7EAEF"/>' +
+        '<text x="' + (padL - 7) + '" y="' + (vy + 3.5) + '" text-anchor="end">' + fmtY(yMax * (4 - k) / 4) + '</text>';
+    }
+    var tickN = Math.min(7, n), j, idx;
+    for (j = 0; j < tickN; j++) {
+      idx = Math.round(j * (n - 1) / (tickN - 1));
+      g += '<text x="' + X(idx).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(fmtTick(mcuTS.times[idx])) + '</text>';
+    }
+    vis.forEach(function (s) {
+      var c = CHART_COLORS[mcuTS.series.indexOf(s) % CHART_COLORS.length];
+      var pts = s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join(' ');
+      if (vis.length === 1) {
+        g += '<polygon fill="' + c + '" opacity=".08" points="' + padL + ',' + Y(0) + ' ' + pts + ' ' + X(n - 1).toFixed(1) + ',' + Y(0) + '"/>';
+      }
+      g += '<polyline fill="none" stroke="' + c + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + pts + '"/>';
+      if (n <= 40) {
+        s.values.forEach(function (v, i) {
+          g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="2.2" fill="' + c + '"/>';
+        });
+      }
     });
-    var grand = (d && d.totalUsage && d.totalUsage.totalTokensUsage !== undefined) ? d.totalUsage.totalTokensUsage : sumTok;
-    els.mcuMeta.textContent = (mcuRange === 0 ? 'TODAY' : mcuRange === 6 ? '7 DAYS' : '30 DAYS') + ' · ' + fmtTokens(grand) + ' TOKENS';
+    g += '<line class="gl" x1="0" x2="0" y1="' + padT + '" y2="' + (H - padB) + '" style="display:none"/>';
+    g += '<rect class="ov" x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + plotH + '" fill="transparent"/>';
+    els.mcuBox.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="模型消耗折线图">' + g + '</svg><div class="tip"></div>';
+    els.mcuBox.hidden = false;
+  }
 
-    if (!list.length) {
+  // 悬停：竖向参考线 + 深色 tooltip 列出该时间点各可见序列的值
+  function attachHover() {
+    els.mcuBox.onmousemove = function (e) {
+      if (!mcuTS) return;
+      var svg = els.mcuBox.querySelector('svg'), tip = els.mcuBox.querySelector('.tip'), gl = els.mcuBox.querySelector('.gl');
+      if (!svg || !tip || !gl) return;
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      var W = 640, padL = 48, padR = 14, plotW = W - padL - padR;
+      var n = mcuTS.times.length;
+      var vx = (e.clientX - rect.left) / rect.width * W;
+      var idx = Math.max(0, Math.min(n - 1, Math.round((vx - padL) / plotW * (n - 1))));
+      var plotX = padL + plotW * (n === 1 ? 0.5 : idx / (n - 1));
+      gl.setAttribute('x1', plotX); gl.setAttribute('x2', plotX);
+      gl.style.display = '';
+      var html = '<div class="t">' + esc(mcuTS.times[idx]) + '</div>';
+      visibleSeries().forEach(function (s) {
+        html += '<div><i class="chip" style="background:' + CHART_COLORS[mcuTS.series.indexOf(s) % CHART_COLORS.length] + '"></i>' +
+          esc(s.name) + ' <b>' + fmtVal(s.name, s.values[idx]) + '</b></div>';
+      });
+      tip.innerHTML = html;
+      tip.style.display = 'block';
+      var boxRect = els.mcuBox.getBoundingClientRect();
+      var lx = rect.left + plotX / W * rect.width - boxRect.left;
+      tip.style.left = lx + 'px';
+      tip.style.top = '6px';
+      tip.style.transform = lx > boxRect.width * 0.6 ? 'translateX(calc(-100% - 12px))' : 'translateX(12px)';
+    };
+    els.mcuBox.onmouseleave = function () {
+      var tip = els.mcuBox.querySelector('.tip'), gl = els.mcuBox.querySelector('.gl');
+      if (tip) tip.style.display = 'none';
+      if (gl) gl.style.display = 'none';
+    };
+  }
+
+  function renderMcuChart() {
+    var ts = extractTimeSeries(UD[mcuRange]) || extractTimeSeries(MU[mcuRange]);
+    var src = MU[mcuRange] || UD[mcuRange] || {};
+    var grand = src.totalUsage && src.totalUsage.totalTokensUsage !== undefined ? Number(src.totalUsage.totalTokensUsage) : null;
+    els.mcuMeta.textContent = (mcuRange === 0 ? 'TODAY' : mcuRange === 6 ? '7 DAYS' : '30 DAYS') + (grand !== null ? ' · ' + fmtTokens(grand) + ' TOKENS' : '');
+    if (!ts) {
+      mcuTS = null;
+      els.mcuBox.hidden = true;
       els.mcuBox.innerHTML = '';
-      els.mcuBox.classList.remove('show');
+      els.mcuLegend.hidden = true;
+      els.mcuLegend.innerHTML = '';
       els.mcuIdle.classList.remove('hide');
-      els.mcuIdle.textContent = d ? '该时段接口未返回模型明细。' : '该时段暂无数据，可切换其他时段。';
+      els.mcuIdle.textContent = src ? '该时段接口未返回时间序列数据。' : '该时段暂无数据，可切换其他时段。';
       return;
     }
-    var rows = list.map(function (m) {
-      var tok = modelTokens(m);
-      var calls = modelCalls(m);
-      var pct = sum > 0 ? val(m) / sum * 100 : 0;
-      var valText = byCalls ? fmtNum(calls) + ' 次' : fmtTokens(tok) + ' tok';
-      var subBits = [byCalls ? fmtTokens(tok) + ' tok' : fmtNum(calls) + ' 次'];
-      if (calls > 0) subBits.push('均 ' + fmtTokens(tok / calls) + ' tok/次');
-      return barRow(modelName(m), '', valText, pct, subBits.join(' · '));
-    });
-    els.mcuBox.innerHTML = rows.join('');
-    els.mcuBox.classList.add('show');
+    mcuTS = ts;
     els.mcuIdle.classList.add('hide');
-    requestAnimationFrame(function () {
-      els.mcuBox.querySelectorAll('.bar i').forEach(function (el) {
-        el.style.width = Math.min(Number(el.getAttribute('data-pct')) || 0, 100) + '%';
-      });
-    });
+    renderLegend();
+    drawChart();
+    attachHover();
   }
 
   /* ---------- main ---------- */
@@ -717,7 +852,8 @@
     var base = els.endpoint.value;
     RAW = {};
     MU = { 0: null, 6: null, 29: null };
-    els.mcuPanel.style.display = '';
+    UD = { 0: null, 6: null, 29: null };
+    mcuOff = {};
     els.btn.disabled = true;
     els.btn.innerHTML = '<span class="spin"></span>查询中…';
     if (!silent) hideAlert();
@@ -726,20 +862,25 @@
       var quota = await apiGet(base, key, '/api/monitor/usage/quota/limit');
       var limits = (quota && quota.limits) || [];
 
-      var p7d = rangeParams(6), p30d = rangeParams(29);
-      var mu7 = null, mu30 = null, tu30 = null;
+      var p7d = '?' + rangeQS(6), p30d = '?' + rangeQS(29);
+      var pdetail7 = '?usageType=MODEL&' + rangeQS(6), pdetail30 = '?usageType=MODEL&' + rangeQS(29);
+      var mu7 = null, mu30 = null, tu30 = null, ud7 = null, ud30 = null;
       var jobs = [
         apiGet(base, key, '/api/monitor/usage/model-usage' + p7d).then(function (d) { mu7 = d; }).catch(function () {}),
         apiGet(base, key, '/api/monitor/usage/model-usage' + p30d).then(function (d) { mu30 = d; }).catch(function () {}),
-        apiGet(base, key, '/api/monitor/usage/tool-usage' + p30d).then(function (d) { tu30 = d; }).catch(function () {})
+        apiGet(base, key, '/api/monitor/usage/tool-usage' + p30d).then(function (d) { tu30 = d; }).catch(function () {}),
+        // usage-detail：折线图优先数据源（token 按缓存/非缓存/输出拆分），失败回退 model-usage 的 x_time
+        apiGet(base, key, '/api/monitor/credit-usage/usage-detail' + pdetail7).then(function (d) { ud7 = d; }).catch(function () {}),
+        apiGet(base, key, '/api/monitor/credit-usage/usage-detail' + pdetail30).then(function (d) { ud30 = d; }).catch(function () {})
       ];
 
       els.quotaMeta.textContent = (quota && typeof quota.level === 'string' && quota.level ? quota.level.toUpperCase() + ' · ' : '') + 'TOKENS · ROLLING WINDOWS';
       renderQuota(limits);
       await Promise.all(jobs);
 
-      var today = null;
-      try { today = await apiGet(base, key, '/api/monitor/usage/model-usage' + rangeParams(0)); } catch (e) {}
+      var today = null, ud0 = null;
+      try { today = await apiGet(base, key, '/api/monitor/usage/model-usage?' + rangeQS(0)); } catch (e) {}
+      try { ud0 = await apiGet(base, key, '/api/monitor/credit-usage/usage-detail?usageType=MODEL&' + rangeQS(0)); } catch (e) {}
 
       var base30 = (mu30 && mu30.totalUsage) || null;
       setStat([els.todayCalls, els.todayTokens, els.todayMini], today && today.totalUsage, base30);
@@ -747,13 +888,9 @@
       setStat([els.monthCalls, els.monthTokens, els.monthMini], mu30 && mu30.totalUsage, base30);
 
       MU[0] = today; MU[6] = mu7; MU[29] = mu30;
-      if (extractModels(MU[0]) || extractModels(MU[6]) || extractModels(MU[29])) {
-        els.mcuPanel.style.display = '';
-        els.mcuSegwrap.hidden = false;
-        renderModelChart();
-      } else {
-        els.mcuPanel.style.display = 'none';
-      }
+      UD[0] = ud0; UD[6] = ud7; UD[29] = ud30;
+      els.mcuSeg.hidden = false;
+      renderMcuChart();
 
       renderMcp(tu30, limits);
 
@@ -788,17 +925,18 @@
     var r = Number(b.getAttribute('data-range'));
     if (r === mcuRange) return;
     mcuRange = r;
+    mcuOff = {};
     els.mcuSeg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
-    renderModelChart();
+    renderMcuChart();
   });
-  els.metricSeg.addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-metric]');
-    if (!b) return;
-    var m = b.getAttribute('data-metric');
-    if (m === mcuMetric) return;
-    mcuMetric = m;
-    els.metricSeg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
-    renderModelChart();
+  els.mcuLegend.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-i]');
+    if (!b || !mcuTS) return;
+    var i = Number(b.getAttribute('data-i'));
+    var visCount = mcuTS.series.filter(function (s, j) { return !mcuOff[j]; }).length;
+    if (!mcuOff[i] && visCount <= 1) return; // 至少保留一个可见系列
+    if (mcuOff[i]) delete mcuOff[i]; else mcuOff[i] = true;
+    renderMcuChart();
   });
   els.auto.addEventListener('change', function () {
     if (timer) { clearInterval(timer); timer = null; }

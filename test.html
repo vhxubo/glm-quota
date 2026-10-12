@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><title>test harness</title>
-<style>body{margin:0}iframe{width:1200px;height:1600px;border:0}</style>
+<style>body{margin:0}iframe{width:1200px;height:1900px;border:0}</style>
 </head>
 <body>
 <iframe id="f" src="index.html"></iframe>
@@ -9,6 +9,18 @@
   const mode = new URLSearchParams(location.search).get('mode') || 'ok';
   const f = document.getElementById('f');
   const H = 3600e3;
+  const p2 = x => String(x).padStart(2, '0');
+  const dayStr = off => { const d = new Date(); d.setDate(d.getDate() - off); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); };
+  const mkDays = n => [...Array(n)].map((_, i) => dayStr(n - 1 - i));
+  const mkHours = () => [...Array(24)].map((_, i) => dayStr(0) + ' ' + p2(i) + ':00');
+  // 从请求 URL 解析范围天数（今日=1）
+  const rangeDays = url => {
+    const m = url.match(/startTime=([^&]+)/);
+    if (!m) return 30;
+    const d = new Date(decodeURIComponent(m[1]).slice(0, 10) + 'T00:00:00');
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.max(1, Math.round((today - d) / 864e5) + 1);
+  };
   f.addEventListener('load', () => {
     const win = f.contentWindow, doc = f.contentDocument;
     if (mode === 'ok') {
@@ -18,20 +30,32 @@
         { type: 'TIME_LIMIT', percentage: 12.5, currentValue: 25, usage: 200, nextResetTime: Date.now() + 72 * H, usageDetails: [{ modelCode: 'web-search', usage: 20 }, { modelCode: 'zread', usage: 5 }] },
         { type: 'PROMPTS_LIMIT', percentage: 40, currentValue: 40, usage: 100, nextResetTime: Date.now() + 72 * H }
       ]}};
-      const usage = { success: true, code: 200, data: {
+      const tool = { success: true, code: 200, data: { totalUsage: { totalNetworkSearchCount: 18, totalWebReadMcpCount: 5, totalZreadMcpCount: 2 } } };
+      const mkUsage = times => ({ success: true, code: 200, data: {
         totalUsage: { totalModelCallCount: 1279, totalTokensUsage: 469134690 },
+        x_time: times,
+        modelCallCount: times.map((_, i) => Math.round(20 + 30 * Math.abs(Math.sin(i / 3)))),
         modelUsage: [
           { modelName: 'glm-4.6', totalModelCallCount: 900, totalTokensUsage: 300112233 },
           { modelName: 'glm-4.5-air', totalModelCallCount: 334, totalTokensUsage: 156676779 },
           { modelName: 'glm-4.5v', totalModelCallCount: 45, totalTokensUsage: 12345678 }
         ]
-      }};
-      const tool = { success: true, code: 200, data: { totalUsage: { totalNetworkSearchCount: 18, totalWebReadMcpCount: 5, totalZreadMcpCount: 2 } } };
+      }});
+      const mkDetail = (times, mult) => ({ success: true, code: 200, data: {
+        x_time: times,
+        cachedTokens: times.map((_, i) => Math.round((300 + 400 * Math.abs(Math.sin(i / 4))) * mult)),
+        uncachedTokens: times.map((_, i) => Math.round((80 + 120 * Math.abs(Math.cos(i / 5))) * mult)),
+        outputTokens: times.map((_, i) => Math.round((40 + 60 * Math.abs(Math.sin(i / 2 + 1))) * mult)),
+        summary: { cacheHitRate: '72.5%', totalCreditsUsage: 1200, avgDailyCredits: 40 }
+      }});
       win.fetch = async (url) => {
         await new Promise(r => setTimeout(r, 200));
-        let body = usage;
+        const n = rangeDays(url);
+        let body;
         if (url.includes('quota/limit')) body = quota;
         else if (url.includes('tool-usage')) body = tool;
+        else if (url.includes('usage-detail')) body = mkDetail(n === 1 ? mkHours() : mkDays(n), n === 1 ? 1 : n === 7 ? 2 : 5);
+        else body = mkUsage(n === 1 ? mkHours() : mkDays(n));
         return { status: 200, ok: true, json: async () => body };
       };
     } else if (mode === 'err401') {
