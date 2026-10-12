@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 离线与防外传强制策略：除两个官方接口外禁止任何网络连接，禁止外链脚本/样式/字体/图片，禁止表单提交 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src https://api.z.ai https://open.bigmodel.cn; form-action 'none'; base-uri 'none'">
 <title>GLM Coding Plan 额度查询</title>
 <meta name="description" content="输入 GLM Coding Plan 的 API Key，查看 5 小时窗口额度、模型调用量与 MCP 工具用量。静态页面，Key 不经过第三方。">
 <style>

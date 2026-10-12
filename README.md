@@ -59,10 +59,12 @@ test.html?mode=real401 # 不 mock，用假 Key 打真实接口验证 CORS/401
 
 ## 安全
 
-- Key 只出现在 `Authorization` 请求头中，且只发往你在下拉框选择的官方域名（`api.z.ai` / `open.bigmodel.cn`）；不进 URL、无统计脚本、页面无其他任何第三方请求。
+- **离线与防外传由 CSP 强制**：页面内置 `Content-Security-Policy`——`connect-src` 仅允许 `api.z.ai` 和 `open.bigmodel.cn` 两个官方域名，`default-src 'none'` 禁止加载任何外部脚本/样式/字体/图片/框架，`form-action 'none'` 禁止表单提交。即使代码被篡改，浏览器也会拦截向其他地址的任何请求。
+- Key 只出现在 `Authorization` 请求头中，且只发往你在下拉框选择的官方域名；不进 URL、无统计脚本、无其他任何第三方请求（唯一的外部 URL 引用就是这两个接口常量，可全文搜索验证）。
 - Key 默认只在页面内存中；勾选「记住 Key」才写入 localStorage（本机浏览器，不参与云同步）。
 - **`file://` 打开时的注意点**：Chrome 把所有本地页面视为同一存储空间，勾选记住后 key 可被你本地打开的其他 HTML 读取。本地文件场景建议不勾选，或改用 `http://127.0.0.1` 访问（按源隔离）。
 - 接口返回的错误信息、限额类型、模型名等字符串均经 HTML 转义后插入，防止响应污染注入脚本。
+- **部署工作流零第三方**：`.github/workflows/deploy.yml` 只使用 GitHub 官方 `actions/*` 仓库的四个 action，且全部固定到 commit SHA（防 tag 篡改）；`upload-pages-artifact` 的产物只进入 GitHub Pages 自有存储，不存在向第三方上传的环节。
 
 ## 隐私
 
