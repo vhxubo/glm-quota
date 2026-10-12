@@ -46,6 +46,7 @@
         cachedTokens: times.map((_, i) => Math.round((300 + 400 * Math.abs(Math.sin(i / 4))) * mult)),
         uncachedTokens: times.map((_, i) => Math.round((80 + 120 * Math.abs(Math.cos(i / 5))) * mult)),
         outputTokens: times.map((_, i) => Math.round((40 + 60 * Math.abs(Math.sin(i / 2 + 1))) * mult)),
+        modelCallCount: times.map((_, i) => Math.round((10 + 25 * Math.abs(Math.sin(i / 3 + 0.5))) * mult / 8)),
         summary: { cacheHitRate: '72.5%', totalCreditsUsage: 1200, avgDailyCredits: 40 }
       }});
       win.fetch = async (url) => {

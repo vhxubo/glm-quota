@@ -734,6 +734,14 @@
     return m ? m[0] : s;
   }
   function isCountSeries(name) { return /次数|调用/.test(name); }
+  // 单位分类：调用次数走右轴，token/积分按出现的先后以先者为主占左轴
+  function kindOf(name) {
+    if (isCountSeries(name)) return 'cnt';
+    if (/积分|credit/i.test(name)) return 'credit';
+    return 'tok';
+  }
+  var KIND_CAPTION = { tok: 'tok', cnt: '次数', credit: '积分' };
+  function fmtAxis(kind, v) { return kind === 'cnt' ? fmtNum(v) : fmtTokens(v); }
   function fmtVal(name, v) { return isCountSeries(name) ? fmtNum(v) : fmtTokens(v); }
 
   function visibleSeries() {
@@ -754,39 +762,63 @@
     }).join('');
   }
 
+  var mcuLayout = { padL: 48, plotW: 0 };
+
   function drawChart() {
-    var W = 640, H = 264, padL = 48, padR = 14, padT = 12, padB = 26;
+    var W = 640, H = 264, padL = 48, padT = 12, padB = 26;
     var n = mcuTS.times.length, vis = visibleSeries();
+    // 双 y 轴：token 类在左轴，调用次数类在右轴；仅单一单位时退化为单轴
+    // （按可见序列判断，隐藏某类全部序列后对应轴随之收起）
+    var kinds = [];
+    vis.forEach(function (s) {
+      var k = kindOf(s.name);
+      if (kinds.indexOf(k) < 0) kinds.push(k);
+    });
+    var leftKind = kinds[0];
+    var rightKind = null;
+    if (kinds.length > 1) rightKind = kinds.indexOf('cnt') >= 0 ? 'cnt' : kinds[1];
+    function axisOf(s) { return kindOf(s.name) === rightKind ? 'R' : 'L'; }
+    var padR = rightKind ? 52 : 14;
     var plotW = W - padL - padR, plotH = H - padT - padB;
-    var maxV = 0;
-    vis.forEach(function (s) { s.values.forEach(function (v) { if (v > maxV) maxV = v; }); });
-    var yMax = niceMax(maxV);
+    mcuLayout.padL = padL;
+    mcuLayout.plotW = plotW;
+    var maxL = 0, maxR = 0;
+    vis.forEach(function (s) {
+      if (axisOf(s) === 'R') s.values.forEach(function (v) { if (v > maxR) maxR = v; });
+      else s.values.forEach(function (v) { if (v > maxL) maxL = v; });
+    });
+    var yMaxL = niceMax(maxL), yMaxR = niceMax(maxR);
     function X(i) { return padL + plotW * (n === 1 ? 0.5 : i / (n - 1)); }
-    function Y(v) { return padT + plotH * (1 - v / yMax); }
-    var allCount = vis.length > 0 && vis.every(function (s) { return isCountSeries(s.name); });
-    var fmtY = allCount ? fmtNum : fmtTokens;
+    function Y(v, ax) { return padT + plotH * (1 - v / (ax === 'R' ? yMaxR : yMaxL)); }
     var g = '';
     var k, vy;
     for (k = 0; k <= 4; k++) {
       vy = padT + plotH * k / 4;
       g += '<line x1="' + padL + '" y1="' + vy + '" x2="' + (W - padR) + '" y2="' + vy + '" stroke="#E7EAEF"/>' +
-        '<text x="' + (padL - 7) + '" y="' + (vy + 3.5) + '" text-anchor="end">' + fmtY(yMax * (4 - k) / 4) + '</text>';
+        '<text x="' + (padL - 7) + '" y="' + (vy + 3.5) + '" text-anchor="end">' + fmtAxis(leftKind, yMaxL * (4 - k) / 4) + '</text>';
+      if (rightKind) {
+        g += '<text x="' + (W - padR + 7) + '" y="' + (vy + 3.5) + '" text-anchor="start">' + fmtAxis(rightKind, yMaxR * (4 - k) / 4) + '</text>';
+      }
     }
+    // 轴单位说明
+    g += '<text x="' + (padL - 7) + '" y="8" text-anchor="end">' + KIND_CAPTION[leftKind] + '</text>';
+    if (rightKind) g += '<text x="' + (W - padR + 7) + '" y="8" text-anchor="start">' + KIND_CAPTION[rightKind] + '</text>';
     var tickN = Math.min(7, n), j, idx;
     for (j = 0; j < tickN; j++) {
       idx = Math.round(j * (n - 1) / (tickN - 1));
       g += '<text x="' + X(idx).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(fmtTick(mcuTS.times[idx])) + '</text>';
     }
     vis.forEach(function (s) {
+      var ax = axisOf(s);
       var c = CHART_COLORS[mcuTS.series.indexOf(s) % CHART_COLORS.length];
-      var pts = s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join(' ');
+      var pts = s.values.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v, ax).toFixed(1); }).join(' ');
       if (vis.length === 1) {
-        g += '<polygon fill="' + c + '" opacity=".08" points="' + padL + ',' + Y(0) + ' ' + pts + ' ' + X(n - 1).toFixed(1) + ',' + Y(0) + '"/>';
+        g += '<polygon fill="' + c + '" opacity=".08" points="' + padL + ',' + Y(0, ax) + ' ' + pts + ' ' + X(n - 1).toFixed(1) + ',' + Y(0, ax) + '"/>';
       }
       g += '<polyline fill="none" stroke="' + c + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="' + pts + '"/>';
       if (n <= 40) {
         s.values.forEach(function (v, i) {
-          g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="2.2" fill="' + c + '"/>';
+          g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v, ax).toFixed(1) + '" r="2.2" fill="' + c + '"/>';
         });
       }
     });
@@ -804,11 +836,11 @@
       if (!svg || !tip || !gl) return;
       var rect = svg.getBoundingClientRect();
       if (!rect.width) return;
-      var W = 640, padL = 48, padR = 14, plotW = W - padL - padR;
+      var W = 640;
       var n = mcuTS.times.length;
       var vx = (e.clientX - rect.left) / rect.width * W;
-      var idx = Math.max(0, Math.min(n - 1, Math.round((vx - padL) / plotW * (n - 1))));
-      var plotX = padL + plotW * (n === 1 ? 0.5 : idx / (n - 1));
+      var idx = Math.max(0, Math.min(n - 1, Math.round((vx - mcuLayout.padL) / mcuLayout.plotW * (n - 1))));
+      var plotX = mcuLayout.padL + mcuLayout.plotW * (n === 1 ? 0.5 : idx / (n - 1));
       gl.setAttribute('x1', plotX); gl.setAttribute('x2', plotX);
       gl.style.display = '';
       var html = '<div class="t">' + esc(mcuTS.times[idx]) + '</div>';
