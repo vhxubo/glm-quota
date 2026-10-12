@@ -168,14 +168,6 @@
   footer .mono { font-family: var(--mono); font-size: 11.5px; }
 
   .rawbox { margin-top: 18px; font-size: 13px; }
-  .seg { display: flex; gap: 4px; }
-  .seg button {
-    font-family: var(--mono); font-size: 11px; padding: 4px 10px;
-    border: 1px solid var(--line); background: #fff; color: var(--ink-2);
-    border-radius: 6px; cursor: pointer;
-  }
-  .seg button:hover { border-color: var(--ink-3); }
-  .seg button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
   .rawbox summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; user-select: none; }
   .rawbox summary:hover { color: var(--ink); }
   .rawbox pre {
@@ -262,19 +254,6 @@
 
   <section class="panel">
     <div class="panel-head">
-      <span class="panel-title">模型用量明细</span>
-      <div class="seg" id="modelSeg">
-        <button type="button" data-scope="today">今日</button>
-        <button type="button" data-scope="d7" class="active">近 7 天</button>
-        <button type="button" data-scope="d30">近 30 天</button>
-      </div>
-    </div>
-    <p class="idle-note" id="modelsIdle">查询后显示各模型的调用与 token 消耗。</p>
-    <div class="models" id="modelsBox"></div>
-  </section>
-
-  <section class="panel">
-    <div class="panel-head">
       <span class="panel-title">MCP 工具用量</span>
       <span class="panel-meta">LAST 30 DAYS</span>
     </div>
@@ -312,12 +291,10 @@
     todayCalls: $('todayCalls'), todayTokens: $('todayTokens'),
     weekCalls: $('weekCalls'), weekTokens: $('weekTokens'),
     monthCalls: $('monthCalls'), monthTokens: $('monthTokens'),
-    modelsBox: $('modelsBox'), modelsIdle: $('modelsIdle'),
-    modelSeg: $('modelSeg'), mcpBox: $('mcpBox'), mcpIdle: $('mcpIdle')
+    mcpBox: $('mcpBox'), mcpIdle: $('mcpIdle')
   };
 
   var timer = null, lastKey = null, lastEndpoint = null;
-  var modelWins = { today: null, d7: null, d30: null };
 
   function fmtNum(n) {
     if (n === undefined || n === null || isNaN(n)) return '--';
@@ -501,41 +478,6 @@
     return txt;
   }
 
-  function extractModels(data) {
-    if (!data) return null;
-    var keys = ['modelUsage', 'models', 'usageList', 'details', 'list', 'modelUsages'];
-    for (var i = 0; i < keys.length; i++) {
-      var arr = data[keys[i]];
-      if (Array.isArray(arr) && arr.length) return arr;
-    }
-    for (var k in data) {
-      if (Array.isArray(data[k]) && data[k].length && data[k][0] && typeof data[k][0] === 'object' &&
-          ('modelName' in data[k][0] || 'model' in data[k][0] || 'name' in data[k][0])) return data[k];
-    }
-    return null;
-  }
-
-  var MODEL_SCOPES = { today: '今日', d7: '近 7 天', d30: '近 30 天' };
-
-  function renderModelTable(scope) {
-    var arr = extractModels(modelWins[scope]);
-    if (!arr) {
-      els.modelsBox.classList.remove('show');
-      els.modelsIdle.classList.remove('hide');
-      els.modelsIdle.textContent = MODEL_SCOPES[scope] + '窗口接口未返回模型明细。';
-      return;
-    }
-    var rows = arr.slice(0, 10).map(function (m) {
-      var name = m.modelName || m.model || m.name || '-';
-      var calls = m.totalModelCallCount !== undefined ? m.totalModelCallCount : (m.callCount !== undefined ? m.callCount : (m.count !== undefined ? m.count : null));
-      var tokens = m.totalTokensUsage !== undefined ? m.totalTokensUsage : (m.tokensUsage !== undefined ? m.tokensUsage : (m.tokens !== undefined ? m.tokens : null));
-      return '<tr><td>' + esc(name) + '</td><td>' + (calls === null ? '--' : fmtNum(calls)) + '</td><td>' + (tokens === null ? '--' : fmtTokens(tokens)) + '</td></tr>';
-    }).join('');
-    els.modelsBox.innerHTML = '<table><thead><tr><th>模型</th><th>调用次数</th><th>Tokens</th></tr></thead><tbody>' + rows + '</tbody></table>';
-    els.modelsBox.classList.add('show');
-    els.modelsIdle.classList.add('hide');
-  }
-
   function renderMcp(tu, limits) {
     var rows = [];
     var t = (tu && tu.totalUsage) || {};
@@ -603,9 +545,6 @@
       setStat([els.weekCalls, els.weekTokens], mu7 && mu7.totalUsage);
       setStat([els.monthCalls, els.monthTokens], mu30 && mu30.totalUsage);
 
-      modelWins = { today: today, d7: mu7, d30: mu30 };
-      var active = els.modelSeg.querySelector('button.active');
-      renderModelTable(active ? active.getAttribute('data-scope') : 'd7');
       renderMcp(tu30, limits);
 
       els.last.textContent = nowTime();
@@ -632,12 +571,6 @@
     var isPw = els.key.type === 'password';
     els.key.type = isPw ? 'text' : 'password';
     els.eye.textContent = isPw ? '隐藏' : '显示';
-  });
-  els.modelSeg.addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('button') : null;
-    if (!b) return;
-    els.modelSeg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('active', x === b); });
-    renderModelTable(b.getAttribute('data-scope'));
   });
   els.auto.addEventListener('change', function () {
     if (timer) { clearInterval(timer); timer = null; }

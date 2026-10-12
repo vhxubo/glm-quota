@@ -19,7 +19,6 @@
 | 额度窗口进度条：5 小时窗口 + 本周 | `GET /api/monitor/usage/quota/limit` | `limits[]` 中两个 `type === 'TOKENS_LIMIT'` 条目，靠 `unit`/`number` 区分：`unit:3, number:5` = 5 小时窗口，`unit:6, number:1` = 本周。字段：`percentage`、`total`（token 上限）、`currentValue`（已用，缺省时按 `total × percentage/100` 推导）、`nextResetTime`（重置时间戳，显示为完整日期时间 + 倒计时，如「重置 2026-10-13（周二）22:00 · 36 小时 0 分钟后」）。响应 `data.level` 为套餐等级，显示在面板右上角 |
 | 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条 |
 | 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码） |
-| 模型用量明细（今日 / 近 7 天 / 近 30 天可切换） | 同上 | 从响应中探测模型数组（`modelUsage` / `models` 等），接口未返回时自动隐藏 |
 | MCP 工具用量 | `GET /api/monitor/usage/tool-usage?…`（30 天） | `totalUsage` 的 `totalNetworkSearchCount`（联网搜索）/ `totalWebReadMcpCount`（网页读取）/ `totalZreadMcpCount`（Zread 读取）；另从 `quota/limit` 中 `TIME_LIMIT` 条目的 `usageDetails[]`（`modelCode` + `usage`）追加按工具明细 |
 | 原始接口数据 | 全部 | 页面底部折叠面板，展示各接口未经处理的完整 JSON，便于核对页面未使用的字段（如重置卡、积分等是否存在） |
 

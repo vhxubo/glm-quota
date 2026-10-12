@@ -55,8 +55,6 @@
     doc.getElementById('apiKey').value = 'fake-key-abc123';
     doc.getElementById('queryBtn').click();
     doc.querySelector('details.rawbox').open = true;
-    const seg = new URLSearchParams(location.search).get('seg');
-    if (seg) { setTimeout(() => { const b = doc.querySelector('#modelSeg button[data-scope="' + seg + '"]'); if (b) b.click(); }, 1500); }
   });
 </script>
 </body>
