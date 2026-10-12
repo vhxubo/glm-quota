@@ -212,13 +212,26 @@
   .ins .i-sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); margin-top: 1px; }
 
   /* ---------- mcp donut + bars ---------- */
-  .mcp-flex { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 4px 18px 18px; }
-  .donut { flex: 0 0 auto; width: 128px; height: 128px; display: block; }
+  .mcp-flex { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 4px 18px 18px; }
+  .donut { flex: 0 0 auto; width: 152px; height: 152px; display: block; }
   .donut .ring { stroke: #E7EAEF; }
+  .donut .seg-c { transition: stroke-width .15s ease; }
+  .donut .seg-c:hover { stroke-width: 7; }
   .donut text { font-family: var(--mono); fill: var(--ink); }
-  .donut .d-num { font-size: 7.5px; font-weight: 600; }
+  .donut .d-num { font-size: 8px; font-weight: 600; }
   .donut .d-cap { font-size: 3.4px; fill: var(--ink-3); letter-spacing: .12em; }
-  .mcp-rows { flex: 1 1 240px; min-width: 220px; }
+  .mcp-rows { flex: 1 1 260px; min-width: 240px; }
+  .mcp-row { padding: 10px 0; }
+  .mcp-row:first-child { padding-top: 2px; }
+  .mcp-row + .mcp-row { border-top: 1px dashed #E4E8EE; }
+  .mcp-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+  .mcp-name { font-size: 13.5px; font-weight: 500; }
+  .mcp-name.gray { color: var(--ink-2); font-weight: 400; }
+  .mcp-name .chip { width: 9px; height: 9px; border-radius: 50%; }
+  .mcp-val { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); white-space: nowrap; }
+  .mcp-val b { font-size: 15px; font-weight: 600; color: var(--ink); margin-right: 2px; }
+  .mcp-bar { height: 12px; border-radius: 6px; background: #E7EAEF; overflow: hidden; }
+  .mcp-bar i { display: block; height: 100%; border-radius: 6px; width: 0; transition: width .5s ease; }
   .chip { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: 0; }
 
   .idle-note { text-align: center; color: var(--ink-3); font-size: 13px; padding: 26px 18px 30px; display: block; }
@@ -579,14 +592,17 @@
   // SVG 环形图：r=15.9155 使周长≈100，dasharray 可直接用百分比；off=25 让起点在 12 点钟方向
   function buildDonut(items, total) {
     var R = 15.9155, segs = '', cum = 0;
+    var multi = items.length > 1;
     items.forEach(function (it, i) {
       var p = total > 0 ? it.count / total * 100 : 0;
+      var dash = (multi && p > 0) ? Math.max(p - 1.2, 0.7) : p; // 扇区间留缝
       segs += '<circle class="seg-c" cx="21" cy="21" r="' + R + '" fill="none" stroke="' + CHART_COLORS[i % CHART_COLORS.length] +
-        '" stroke-width="4.5" stroke-dasharray="' + p + ' ' + (100 - p) + '" stroke-dashoffset="' + (25 - cum) + '"></circle>';
+        '" stroke-width="6" stroke-dasharray="' + dash + ' ' + (100 - dash) + '" stroke-dashoffset="' + (25 - cum) + '">' +
+        '<title>' + esc(it.name) + ' ' + fmtNum(it.count) + ' 次 · ' + p.toFixed(1) + '%</title></circle>';
       cum += p;
     });
     return '<svg class="donut" viewBox="0 0 42 42" role="img" aria-label="MCP 工具调用占比">' +
-      '<circle class="ring" cx="21" cy="21" r="' + R + '" fill="none" stroke-width="4.5"></circle>' + segs +
+      '<circle class="ring" cx="21" cy="21" r="' + R + '" fill="none" stroke-width="6"></circle>' + segs +
       '<text class="d-num" x="21" y="20.8" text-anchor="middle">' + fmtNum(total) + '</text>' +
       '<text class="d-cap" x="21" y="26.4" text-anchor="middle">MCP CALLS · 30D</text>' +
       '</svg>';
@@ -627,10 +643,10 @@
       group.forEach(function (x) { gSum += x.count; if (x.count > gMax) gMax = x.count; });
       var pct = gSum > 0 ? it.count / gSum * 100 : 0;
       var w = gMax > 0 ? it.count / gMax * 100 : 0;
-      return '<div class="limit-row">' +
-        '<div class="lr-head"><span class="name"><i class="chip" style="background:' + c + '"></i>' + esc(it.name) + '</span>' +
-        '<span class="val">' + fmtNum(it.count) + ' 次 · ' + pct.toFixed(1) + '%</span></div>' +
-        '<div class="bar"><i data-pct="' + w + '" style="width:0%;background:' + c + '"></i></div>' +
+      return '<div class="mcp-row">' +
+        '<div class="mcp-meta"><span class="mcp-name' + (gray ? ' gray' : '') + '"><i class="chip" style="background:' + c + '"></i>' + esc(it.name) + '</span>' +
+        '<span class="mcp-val"><b>' + fmtNum(it.count) + '</b> 次 · ' + pct.toFixed(1) + '%</span></div>' +
+        '<div class="mcp-bar"><i data-pct="' + w + '" style="width:0%;background:' + c + '"></i></div>' +
         '</div>';
     }
     var rows = donutItems.map(function (it, i) { return rowHtml(it, i, donutItems, false); })
@@ -640,7 +656,7 @@
     els.mcpBox.classList.add('show');
     els.mcpIdle.classList.add('hide');
     requestAnimationFrame(function () {
-      els.mcpBox.querySelectorAll('.mcp-rows .bar i').forEach(function (el) {
+      els.mcpBox.querySelectorAll('.mcp-rows .mcp-bar i').forEach(function (el) {
         el.style.width = Math.min(Number(el.getAttribute('data-pct')) || 0, 100) + '%';
       });
     });
