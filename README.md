@@ -12,12 +12,13 @@
 - 粘贴 API Key（z.ai 或智谱开放平台的 API Keys 页面可找到），点击「查询用量」（`Ctrl+Enter` 亦可）。
 - 支持一次粘贴多个 Key（换行、空格或逗号分隔）：所有 Key 并发查询，在「多 Key 总览」面板对比展示，点击总览行可切换下方详情面板显示的 Key。
 - 可选：记住 Key（仅存 localStorage）、每 60 秒自动刷新、切换接口站点。
+- 深色模式：默认跟随系统（`prefers-color-scheme`），点击顶栏 `◐ AUTO / ☀ LIGHT / ☾ DARK` 可固定亮色或暗色（选择存于 localStorage），首帧前应用主题、刷新不闪白。
 
 ## 展示内容
 
 | 区块 | 来源接口 | 说明 |
 |---|---|---|
-| 多 Key 总览（≥2 个 Key 时出现） | 全部接口 | 每行一个 Key：状态点、套餐等级、5 小时 / 本周窗口百分比条（配色阈值同进度条）、今日与近 30 天调用次数。查询失败的 Key 在行内直接显示错误码与原因（其余 Key 不受影响），点击行可再次查看错误；点击成功的行切换下方各详情面板展示的 Key，当前行高亮 |
+| 多 Key 总览（≥2 个 Key 时出现） | 全部接口 | 每行一个 Key：状态点、套餐等级、5 小时 / 本周窗口百分比条（配色阈值同进度条）、今日与近 30 天调用次数。查询失败的 Key 在行内直接显示错误码与原因（其余 Key 不受影响），点击行可再次查看错误；点击成功的行切换下方各详情面板展示的 Key，当前行高亮。行尾 × 就地移除该 Key（同步清掉输入框中对应内容与记住的存储，不重新请求），误触可通过重新粘贴恢复 |
 | 额度窗口进度条：5 小时窗口 + 本周 | `GET /api/monitor/usage/quota/limit` | `limits[]` 中两个 `type === 'TOKENS_LIMIT'` 条目，靠 `unit`/`number` 区分：`unit:3, number:5` = 5 小时窗口，`unit:6, number:1` = 本周。字段：`percentage`、`total`（token 上限）、`currentValue`（已用，缺省时按 `total × percentage/100` 推导）、`nextResetTime`（重置时间戳，显示为完整日期时间 + 倒计时，如「重置 2026-10-13（周二）22:00 · 36 小时 0 分钟后」）。响应 `data.level` 为套餐等级，显示在面板右上角 |
 | 其他限额（如 MCP） | 同上 | `type === 'TIME_LIMIT'` 即 MCP 月度调用；其余未知类型以原始名称渲染为进度条，副行显示 `nextResetTime` 的重置时间与倒计时 |
 | 今日 / 近 7 天 / 近 30 天调用量 | `GET /api/monitor/usage/model-usage?startTime=…&endTime=…` | `totalUsage.totalModelCallCount`、`totalUsage.totalTokensUsage`；时间格式 `YYYY-MM-DD HH:mm:ss`（本地时间，URL 编码）。每张卡片带迷你比例条（该时段 tokens 占近 30 天的比例，30 天卡恒为满格作标尺），副行附平均 tok/次 |
